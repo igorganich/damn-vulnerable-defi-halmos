@@ -44,8 +44,8 @@ contract TrusterChallenge is Test {
         console.log("token", address(token));
         console.log("pool", address(pool));
 
-        shared_data.add_known_address(address(pool));
-        shared_data.add_known_address(address(token));
+        shared_data.add_known_address_with_name(address(pool), "TrusterLenderPool");
+        shared_data.add_known_address_with_name(address(token), "DamnValuableToken");
 
         vm.stopPrank();
     }
