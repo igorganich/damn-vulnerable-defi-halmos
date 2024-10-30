@@ -2,7 +2,7 @@
 
 pragma solidity =0.8.25;
 
-import "../../lib/halmos-cheatcodes/src/SymTest.sol";
+import "halmos-cheatcodes/SymTest.sol";
 import "forge-std/Test.sol";
 
 contract Attacker is Test, SymTest {

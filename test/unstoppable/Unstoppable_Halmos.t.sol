@@ -20,7 +20,7 @@ contract UnstoppableChallenge is Test {
     UnstoppableMonitor public monitorContract;
 
     modifier checkSolvedByPlayer() {
-        vm.startPrank(player);
+        vm.startPrank(player, player);
         _;
         vm.stopPrank();
         _isSolved();

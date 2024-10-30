@@ -46,9 +46,6 @@ contract UnstoppableChallenge is Test {
 
         vm.stopPrank();
         targetSender(player);
-        targetContract(address(token));
-        targetContract(address(vault));
-        targetContract(address(monitorContract));
     }
 
     function invariant_check_flash_loan() public {
