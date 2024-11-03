@@ -5,23 +5,22 @@ pragma solidity =0.8.25;
 import {Test, console} from "forge-std/Test.sol";
 import {DamnValuableToken} from "../../src/DamnValuableToken.sol";
 import {TrusterLenderPool} from "../../src/truster/TrusterLenderPool.sol";
-
-import "../../lib/SharedGlobalData.sol";
-import "./AbstractAttacker.sol";
+import "./SymbolicAttacker.sol";
+import "lib/GlobalStorage.sol";
 
 contract TrusterChallenge is Test {
-    address deployer = address(0xde4107e4);
-    address recovery = address(0xa77ac3e5);
-    address player = address(0xa77ac3e4);
+    address deployer = address(0xcafe0000);
+    address player = address(0xcafe0001);
+    address recovery = address(0xcafe0002);
     
     uint256 constant TOKENS_IN_POOL = 1_000_000e18;
 
-    SharedGlobalData shared_data;
+    GlobalStorage public glob; // Add global storage contract
     DamnValuableToken public token;
     TrusterLenderPool public pool;
 
     modifier checkSolvedByPlayer() {
-        vm.startPrank(player);
+        vm.startPrank(player, player);
         _;
         vm.stopPrank();
         _isSolved();
@@ -31,22 +30,18 @@ contract TrusterChallenge is Test {
      * SETS UP CHALLENGE - DO NOT TOUCH
      */
     function setUp() public {
-        startHoax(deployer, 1 << 80);
-        shared_data = new SharedGlobalData();
-        // Deploy token
+        startHoax(deployer);
+
+        // Deploy global storage. It'll have a "0xaaaa0002" address
+        glob = new GlobalStorage(); 
         token = new DamnValuableToken();
 
         // Deploy pool and fund it
         pool = new TrusterLenderPool(token);
         token.transfer(address(pool), TOKENS_IN_POOL);
 
-        console.log("shared_data", address(shared_data));
-        console.log("token", address(token));
-        console.log("pool", address(pool));
-
-        shared_data.add_known_address_with_name(address(pool), "TrusterLenderPool");
-        shared_data.add_known_address_with_name(address(token), "DamnValuableToken");
-
+        glob.add_addr_name_pair(address(token), "DamnValuableToken");
+        glob.add_addr_name_pair(address(pool), "TrusterLenderPool");
         vm.stopPrank();
     }
 
@@ -63,7 +58,11 @@ contract TrusterChallenge is Test {
      * CODE YOUR SOLUTION HERE
      */
     function check_truster() public checkSolvedByPlayer {
-        AbstractAttacker attacker = new AbstractAttacker();
+        SymbolicAttacker attacker = new SymbolicAttacker();
+        console.log("glob\t", address(glob));
+        console.log("token\t", address(token));
+        console.log("pool\t", address(pool));
+        console.log("attacker\t", address(attacker));
         attacker.attack();
     }
 
@@ -72,14 +71,8 @@ contract TrusterChallenge is Test {
      */
     function _isSolved() private view {
         // Player must have executed a single transaction
-        //assertEq(vm.getNonce(player), 1, "Player executed more than one tx");
 
         // All rescued funds sent to recovery account
-
         assert(token.balanceOf(address(pool)) != 0 || token.balanceOf(recovery) != TOKENS_IN_POOL);
-
-
-      //  assertEq(token.balanceOf(address(pool)), 0, "Pool still has tokens");
-      //  assertEq(token.balanceOf(recovery), TOKENS_IN_POOL, "Not enough tokens in recovery account");
     }
 }

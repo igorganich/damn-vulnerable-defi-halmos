@@ -3,16 +3,17 @@
 pragma solidity =0.8.25;
 
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
-import "../../lib/halmos-cheatcodes/src/SymTest.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {DamnValuableToken} from "../DamnValuableToken.sol";
-import {Test, console} from "forge-std/Test.sol";
-import "../../lib/SharedGlobalData.sol";
+import "halmos-cheatcodes/SymTest.sol";
+import "forge-std/Test.sol";
 
+import "lib/GlobalStorage.sol";
 
 contract TrusterLenderPool is ReentrancyGuard, SymTest, Test {
-    SharedGlobalData shared_data = SharedGlobalData(address(0x00000000000000000000000000000000000000000000000000000000aaaa0002));
     using Address for address;
+    // We can hardcode this address for convenience
+    GlobalStorage glob = GlobalStorage(address(0xaaaa0002)); 
 
     DamnValuableToken public immutable token;
 
@@ -22,15 +23,12 @@ contract TrusterLenderPool is ReentrancyGuard, SymTest, Test {
         token = _token;
     }
 
-    /*function flashLoan(uint256 amount, address borrower, address target, uint256 data_id)
+    // save original function
+    /*function flashLoan(uint256 amount, address borrower, address target, bytes calldata data)
         external
         nonReentrant
         returns (bool)
     {
-        console.log("flashloan start");
-        bytes memory data = shared_data.get_known_data(data_id);
-        target = shared_data.get_known_address(target);
-        console.log("target_flashloan is ", target);
         uint256 balanceBefore = token.balanceOf(address(this));
 
         token.transfer(borrower, amount);
@@ -43,21 +41,22 @@ contract TrusterLenderPool is ReentrancyGuard, SymTest, Test {
         return true;
     }*/
 
-
-    function flashLoan(uint256 amount, address borrower, address target, bytes calldata data, bytes4 selector)
+    // Symbolic flashloan function
+    function flashLoan(uint256 amount, address borrower, address target, bytes calldata data)
         external
         nonReentrant
         returns (bool)
     {
         uint256 balanceBefore = token.balanceOf(address(this));
 
-        string memory target_name;
-        (target, target_name) = shared_data.get_known_address_with_name(target);
-
         token.transfer(borrower, amount);
-        bytes memory my_data = svm.createCalldata(target_name);
-        target.functionCall(my_data);
-        vm.assume(selector == bytes4(my_data));
+
+        string memory name;
+        (target, name) = glob.get_concrete_from_symbolic(target);
+        // Don't use "data". Use "newdata" instead
+        bytes memory newdata = svm.createCalldata(name);
+        target.functionCall(newdata);
+
         if (token.balanceOf(address(this)) < balanceBefore) {
             revert RepayFailed();
         }
