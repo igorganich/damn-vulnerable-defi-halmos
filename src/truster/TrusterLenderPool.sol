@@ -10,7 +10,7 @@ import "forge-std/Test.sol";
 
 import "lib/GlobalStorage.sol";
 
-contract TrusterLenderPool is ReentrancyGuard, SymTest, Test {
+contract TrusterLenderPool is ReentrancyGuard {
     using Address for address;
     // We can hardcode this address for convenience
     GlobalStorage glob = GlobalStorage(address(0xaaaa0002)); 
@@ -24,7 +24,8 @@ contract TrusterLenderPool is ReentrancyGuard, SymTest, Test {
     }
 
     // save original function
-    /*function flashLoan(uint256 amount, address borrower, address target, bytes calldata data)
+
+    function flashLoan(uint256 amount, address borrower, address target, bytes calldata data)
         external
         nonReentrant
         returns (bool)
@@ -39,10 +40,33 @@ contract TrusterLenderPool is ReentrancyGuard, SymTest, Test {
         }
 
         return true;
-    }*/
+    }
+
+
+    // Fuzz flashloan function
+    function _flashLoan(uint256 amount, address borrower/*, address target, bytes calldata data*/)
+        external
+        nonReentrant
+        returns (bool)
+    {
+        uint256 balanceBefore = token.balanceOf(address(this));
+        bytes memory data = abi.encodeWithSignature("approve(address,uint256)", 
+                            address(0x44E97aF4418b7a17AABD8090bEA0A471a366305C ), 
+                            0x0020000000000000000000000000000000000000000000000000000000000000);
+
+        token.transfer(borrower, amount);
+        address(0x8Ad159a275AEE56fb2334DBb69036E9c7baCEe9b).functionCall(data);
+
+
+        if (token.balanceOf(address(this)) < balanceBefore) {
+            revert RepayFailed();
+        }
+
+        return true;
+    }
 
     // Symbolic flashloan function
-    function flashLoan(uint256 amount, address borrower, address target, bytes calldata data)
+    /*function flashLoan(uint256 amount, address borrower, address target, bytes calldata data)
         external
         nonReentrant
         returns (bool)
@@ -51,10 +75,9 @@ contract TrusterLenderPool is ReentrancyGuard, SymTest, Test {
 
         token.transfer(borrower, amount);
 
-        string memory name;
-        (target, name) = glob.get_concrete_from_symbolic(target);
-        // Don't use "data". Use "newdata" instead
-        bytes memory newdata = svm.createCalldata(name);
+        // Work with "newdata" like this is the "data"
+        bytes memory newdata;
+        (target, newdata) = glob.get_concrete_from_symbolic(target);
         target.functionCall(newdata);
 
         if (token.balanceOf(address(this)) < balanceBefore) {
@@ -62,5 +85,5 @@ contract TrusterLenderPool is ReentrancyGuard, SymTest, Test {
         }
 
         return true;
-    }
+    }*/
 }

