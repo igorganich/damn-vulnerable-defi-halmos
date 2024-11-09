@@ -1,0 +1,4 @@
+deployer: '0xcafe0001' 
+sender: ['0xcafe0002']
+allContracts: true
+workers: 8

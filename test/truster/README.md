@@ -2,7 +2,7 @@
 ## Halmos version
 halmos 0.2.1.dev16+g1502e46 was used in this article
 ## Foreword
-It is strongly assumed that the reader is familiar with the previous article on solving "Unstoppable" (ADD LINK), since the main ideas here are largely repeated and we will not dwell on them again. It should also be clearly stated that we have postponed the "Naive-receiver"(ADD LINK) solution for now, because it is in "Truster" that further necessary techniques for the "Naive-receiver" solution are described. In order not to mislead the reader and not to rush ahead, this order of presentation of the material was chosen.
+It is strongly assumed that the reader is familiar with the previous article on solving ["Unstoppable"](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/unstoppable), since the main ideas here are largely repeated and we will not dwell on them again. It should also be clearly stated that we have postponed the ["Naive-receiver"](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/naive-receiver) solution for now, because it is in "Truster" that further necessary techniques for the "Naive-receiver" solution are described. In order not to mislead the reader and not to rush ahead, this order of presentation of the material was chosen.
 ## Idea overview
 Based on what we already know, we will again try to make an attacker contract that would symbolically execute some transaction and hope that this will lead to the attack we need. But will it be enough this time?
 ## Preparation for the attack
@@ -413,8 +413,7 @@ p_to_address_8272409_34 = 0x0000000000000000000000000000000000000000000000000000
 p_v_uint8_49e43a7_10 = 0x0000000000000000000000000000000000000000000000000000000000000000
 p_value_uint256_d5bb651_08 = 0x80000000000000000000000000000000000000000000005000200e0000000000
 ```
-Wow, Halmos thinks an attacker can call the **permit** function from **ERC20** https://docs.openzeppelin.com/contracts/4.x/api/token/erc20#ERC20Permit-permit-address-address-uint256-uint256-uint8-bytes32 -bytes32-
-with pool's signature, thereby allowing to call **transferFrom**, sending all funds to the recovery account.  The problem is that the attacker does not have a private key from the pool, so he cannot craft such a function call. Obviously, we cannot use symbolic analysis to crack the cryptography of signatures. And the null bytes provided by Halmos for the v, r and s parameters confirm this. Therefore, this is, unfortunately, a fake solution.
+Wow, Halmos thinks an attacker can call the [permit](https://docs.openzeppelin.com/contracts/4.x/api/token/erc20#IERC20Permit-permit-address-address-uint256-uint256-uint8-bytes32-bytes32-) function from **ERC20** with pool's signature, thereby allowing to call **transferFrom**, sending all funds to the recovery account.  The problem is that the attacker does not have a private key from the pool, so he cannot craft such a function call. Obviously, we cannot use symbolic analysis to crack the cryptography of signatures. And the null bytes provided by Halmos for the v, r and s parameters confirm this. Therefore, this is, unfortunately, a fake solution.
 The situation is similar with the second counterexample:
 ```javascript
 Counterexample:
@@ -438,7 +437,7 @@ p_to_address_9bc8f39_42 = 0x0000000000000000000000000000000000000000000000000000
 p_v_uint8_88f0351_18 = 0x0000000000000000000000000000000000000000000000000000000000000000
 p_value_uint256_a28c1c2_16 = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff 
 ```
-Here is the same permit, but this time we entered it from under flashLoan. Interestingly, we noticed here: if you pass the amount to flashLoan as 0, the transaction will still go through, and nothing needs to be returned.
+Here is the same **permit**, but this time we entered it from under **flashLoan**. Interestingly, we noticed here: if you pass the amount to **flashLoan** as 0, the transaction will still go through, and nothing needs to be returned.
 And only for the third time, finally, Halmos did find a solution to this problem. Although it was spinning nearby :D 
 ```javascript
 Counterexample:
@@ -457,7 +456,7 @@ p_spender_address_429fd9d_12 = 0x00000000000000000000000000000000000000000000000
 p_target_address_de4b479_06 = 0x00000000000000000000000000000000000000000000000000000000aaaa0003
 p_to_address_50e8baf_42 = 0x00000000000000000000000000000000000000000000000000000000cafe0002 
 ```
-Of course, we call flashLoan with the parameter amount=0, force the pool inside flashLoan to call approve all tokens for attacker. And then we just make transferFrom pool to recovery the second transaction.
+Of course, we call **flashLoan** with the parameter **amount=0**, force the pool inside flashLoan to call **approve** all tokens for attacker. And then we just make **transferFrom** pool to recovery the second transaction.
 ## Using a counterexample
 We need these addresses in forge:
 ```javascript
@@ -502,32 +501,288 @@ Suite result: ok. 2 passed; 0 failed; 0 skipped; finished in 1.24ms (386.40µs C
 ...
 ```
 Passed! Halmos successfully solved this problem as well.
+## Fuzzing time!
+### Foundry
+Let's start with Foundry invariant testing. For "fairness" sake, we'll also give it plenty of time to run.
+Foundry.toml:
 ```javascript
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+...
+[fuzz]
+runs = 100000
 ```
+Truster_Fuzz.t.sol:
+```solidity
+function setUp() public {
+...
+    targetSender(player);
+}
+...
+function invariant_isSolved() public {
+    assert(token.balanceOf(address(pool)) >= TOKENS_IN_POOL);
+}
+```
+As an invariant, the criterion "Can we manipulate the balance of the pool in a downward direction at all?" was selected. Try it:
+```javascript
+$ forge test -vvvvv --mp test/truster/Truster_Fuzz.t.sol
+...
+[PASS] invariant_isSolved() (runs: 100000, calls: 50000000, reverts: 39756330)
+...
+[24523] DamnValuableToken::approve(0x00000000000000000000000000000000000003A2, 3580)
+...
+[6974] DamnValuableToken::transfer(0x5BE45f33883Ce9E32a648b77F365b4A292C360cE, 0)
+...
+```
+Nothing. Even no successful transaction using **"flashLoan"**. So, I decided to give the fuzzer a big tip:
+```solidity
+// Fuzz flashloan function
+
+function _flashLoan(uint256 amount, address borrower)
+    external
+    nonReentrant
+    returns (bool)
+{
+    uint256 balanceBefore = token.balanceOf(address(this));
+    bytes memory data = abi.encodeWithSignature("approve(address,uint256)", 
+                        address(0x44E97aF4418b7a17AABD8090bEA0A471a366305C ), 
+                        0x0020000000000000000000000000000000000000000000000000000000000000);
+
+    token.transfer(borrower, amount);
+    address(0x8Ad159a275AEE56fb2334DBb69036E9c7baCEe9b).functionCall(data);
 
 
+    if (token.balanceOf(address(this)) < balanceBefore) {
+        revert RepayFailed();
+    }
 
+    return true;
+}
+```
+Yes, this is a ready transaction to approve tokens. Run:
+```javascript
+$ forge test -vvvvv --mp test/truster/Truster_Fuzz.t.sol
+...
+[FAIL: invariant_isSolved replay failure]
+        [Sequence]
+                sender=0x44E97aF4418b7a17AABD8090bEA0A471a366305C addr=[src/truster/TrusterLenderPool.sol:TrusterLenderPool]0x1240FA2A84dd9157a0e76B5Cfe98B1d52268B264 calldata=_flashLoan(uint256,address) args=[0, 0x85B3d986977391795F57ce5c08d0E1925c7ADc80]
+                sender=0x44E97aF4418b7a17AABD8090bEA0A471a366305C addr=[src/DamnValuableToken.sol:DamnValuableToken]0x8Ad159a275AEE56fb2334DBb69036E9c7baCEe9b calldata=transferFrom(address,address,uint256) args=[0x1240FA2A84dd9157a0e76B5Cfe98B1d52268B264, 0x000000000000000000000000000000000000022D, 67]
+```
+With this hint, the Foundry fuzzer did find the attack. As I understand it, the very construction of some transaction through target and data passed through parameters is already a problem for Foundry fuzzer.
+Okay, so let's rewrite our hint, but make it less explicit and avoid passing target and data through parameters:
+```solidity
+// Fuzz flashloan function (less hint)
+function __flashLoan(uint256 amount, address borrower, bool is_approve, address to, uint256 amount_to_approve)
+    external
+    nonReentrant
+    returns (bool)
+{
+    uint256 balanceBefore = token.balanceOf(address(this));
+    
+    token.transfer(borrower, amount);
+    if (is_approve) {
+        token.approve(to, amount);
+    }
+    if (token.balanceOf(address(this)) < balanceBefore) {
+        revert RepayFailed();
+    }
 
+    return true;
+}
+```
+Here, it is enough to pass is **false = true**, **to** as the address of the player, and a rather large **amount_to_approve** to the fuzzer. And perform **transferFrom** with another transaction. Let's try:
+```javascript
+$ forge test -vvvvv --mp test/truster/Truster_Fuzz.t.sol
+...
+  [22609] TrusterLenderPool::__flashLoan(0, 0x511115Da795ee95A8f5557bE63E005478D4A19Bc, true, 0x50719d462702f96320f8747bc51b7b447c989Cb3, 5108201074406009179262425133938908488538452 [5.108e42])
+  ...
+      ├─ [4623] DamnValuableToken::approve(0x50719d462702f96320f8747bc51b7b447c989Cb3, 0)    
+      │   ├─ emit Approval(owner: TrusterLenderPool: [0x1240FA2A84dd9157a0e76B5Cfe98B1d52268B264], spender: 0x50719d462702f96320f8747bc51b7b447c989Cb3, amount: 0)
+...
+  [22609] TrusterLenderPool::__flashLoan(0, 0x33911140d693f2d422d721856297dfa98d3e9E48, true, 0x60CF39a6CcA10123Ee5Cb8d224CCde855be067CF, 1498798982649291 [1.498e15])
+  ...
+    ├─ [4623] DamnValuableToken::approve(0x60CF39a6CcA10123Ee5Cb8d224CCde855be067CF, 0)
+    │   ├─ emit Approval(owner: TrusterLenderPool: [0x1240FA2A84dd9157a0e76B5Cfe98B1d52268B264], spender: 0x60CF39a6CcA10123Ee5Cb8d224CCde855be067CF, amount: 0)
+...
+Suite result: ok. 1 passed; 0 failed; 0 skipped; finished in 1644.57s (1644.57s CPU time)
+```
+All transaction sequences with **"flashLoan->approve"** did not lead to anything, because some random addresses, which are not even deployed, were always chosen as the **"to"** parameter. We could still experiment with hints, but in my opinion such logic of the fuzzer is already too weak. Even if the solution exist, then we still have to twist the fuzzer logic a lot to achieve an acceptable result. 
+So let's try something different.
+### Echidna
+I chose Echidna as another fuzzing engine. Echidna-styled invariant testing contract:
+```solidity
+// SPDX-License-Identifier: MIT
+// Damn Vulnerable DeFi v4 (https://damnvulnerabledefi.xyz)
+pragma solidity =0.8.25;
+
+import {DamnValuableToken} from "../../src/DamnValuableToken.sol";
+import {TrusterLenderPool} from "../../src/truster/TrusterLenderPool.sol";
+
+contract TrusterEchidna {
+    
+    uint256 constant TOKENS_IN_POOL = 1_000_000e18;
+
+    DamnValuableToken public token;
+    TrusterLenderPool public pool;
+
+    constructor() public payable {
+        // Deploy token
+        token = new DamnValuableToken();
+
+        // Deploy pool and fund it
+        pool = new TrusterLenderPool(token);
+        token.transfer(address(pool), TOKENS_IN_POOL);
+    
+    }
+
+    function echidna_testSolved() public returns (bool) {
+        if (token.balanceOf(address(pool)) >= TOKENS_IN_POOL)
+        {
+            return true;
+        }
+        return false;
+    }
+}
+```
+config:
+```javascript
+deployer: '0xcafe0001'
+sender: ['0xcafe0002']
+allContracts: true
+workers: 8
+```
+First, let's try again with a "clean" TrusterLenderPool:
+```javascript
+$ forge build
+...
+$ echidna test/truster/TrusterEchidna.sol --contract TrusterEchidna --config test/truster/truster.yaml --test-limit 10000000
+...
+echidna_testSolved: passing
+Unique instructions: 2864
+Corpus size: 15
+Seed: 5278472965973577621
+```
+Unfortunately, nothing. Maybe with a hint, Echidna will find a solution? (Second "hinted" flashLoan function was used):
+```javascript
+$ forge build
+...
+$ echidna test/truster/TrusterEchidna.sol --contract TrusterEchidna --config test/truster/truster.yaml --test-limit 10000000
+...
+echidna_testSolved: failed!
+  Call sequence:
+    TrusterLenderPool.__flashLoan(1,0x62d69f6867a0a084c6d313943dc22023bc263691,true,0xcafe0002,1)
+        DamnValuableToken.transferFrom(0x62d69f6867a0a084c6d313943dc22023bc263691,0x0,1)
+...
+```
+Hooray! In this case, **Echidna** did find a sequence that breaks the invariant. However, we still gave a very large hint for the fuzzer. Therefore, let's consider all possible calls that could be made from under **flashLoan** (At least those that are in the setup). Ladies and gentlemen, meet FRANKENSTEIN:
+```solidity
+function __flashLoan(uint256 amount, address borrower,
+                        bool is_token,
+                        bool is_approve, address approve_to, uint256 approve_amount,
+                        bool is_permit, address permit_owner, address permit_spender, 
+                            uint256 permit_value, uint256 permit_deadline, uint8 permit_v,
+                            bytes32 permit_r, bytes32 permit_s,
+                        bool is_transfer, address transfer_to, uint256 transfer_amount,
+                        bool is_transferFrom, address transferFrom_from, 
+                            address transferFrom_to, uint256 transferFrom_amount
+                        )
+    external
+    nonReentrant
+    returns (bool)
+{
+    uint256 balanceBefore = token.balanceOf(address(this));
+    
+    token.transfer(borrower, amount);
+    //target is token
+    if (is_token) {
+        if (is_approve) {
+            token.approve(approve_to, approve_amount);
+        }
+        else if (is_permit) {
+            token.permit(permit_owner, permit_spender, permit_value, 
+                                        permit_deadline, permit_v,
+                                        permit_r, permit_s);
+        }
+        else if (is_transfer) {
+            token.transfer(transfer_to, transfer_amount);
+        }
+        else if (is_transferFrom) {
+            token.transferFrom(transferFrom_from, transferFrom_to, transferFrom_amount);
+        }
+    }
+    //target is pool
+    else {
+        bytes memory data = ""; // The only one function in pool is nonReentrant anyway
+        address(this).functionCall(data); // Call flashloan itself
+    }
+    if (token.balanceOf(address(this)) < balanceBefore) {
+        revert RepayFailed();
+    }
+    return true;
+}
+```
+Of course, it doesn't compile:
+```javascript
+$ forge build
+...
+Error: Compiler run failed:
+Error: Compiler error (/solidity/libsolidity/codegen/LValue.cpp:51):Stack too deep. ...
+...
+```
+But we can 
+1) Comment out all the calls, except for one function
+2) Start fuzzing
+3) If it didn't work, comment on the other one and repeat. For example, if we want to check the transfer function as a target - this FRANKENSTEIN changes to something like this:
+```solidity
+// Fuzz flashloan function (less hint)
+function __flashLoan(uint256 amount, address borrower,
+                        bool is_token,
+                        /*bool is_approve, address approve_to, uint256 approve_amount,
+                        bool is_permit, address permit_owner, address permit_spender, 
+                            uint256 permit_value, uint256 permit_deadline, uint8 permit_v,
+                            bytes32 permit_r, bytes32 permit_s,*/
+                        bool is_transfer, address transfer_to, uint256 transfer_amount/*,
+                        bool is_transferFrom, address transferFrom_from, 
+                            address transferFrom_to, uint256 transferFrom_amount*/
+                        )
+    external
+    nonReentrant
+    returns (bool)
+{
+    uint256 balanceBefore = token.balanceOf(address(this));
+    
+    token.transfer(borrower, amount);
+    //target is token
+    if (is_token) {
+    /*    if (is_approve) {
+            token.approve(approve_to, approve_amount);
+        }
+        else if (is_permit) {
+            token.permit(permit_owner, permit_spender, permit_value, 
+                                        permit_deadline, permit_v,
+                                        permit_r, permit_s);
+        }
+        else */if (is_transfer) {
+            token.transfer(transfer_to, transfer_amount);
+        }
+    /*    else if (is_transferFrom) {
+            token.transferFrom(transferFrom_from, transferFrom_to, transferFrom_amount);
+        }
+    */}
+    /*
+    else {
+        bytes memory data = ""; // The only one function in pool is nonReentrant anyway
+        address(this).functionCall(data); // Call flashloan itself
+    }*/
+    if (token.balanceOf(address(this)) < balanceBefore) {
+        revert RepayFailed();
+    }
+    return true;
+}
+```
+I think that's enough :D
+## Conclusions
+1. Sometimes, one transaction is not enough for an attack. Symbolically perform 2 transactions in 
+such tasks generally possible for Halmos.
+2. One of the main conditions for successful preparation of the symbolic test is to make sure that the maximum number of paths is covered. If there is a way to simply increase this number, it should be done!
+3. If the target contract needs some changes, don't be afraid to make them. The main thing is to understand what we are doing so as not to affect the result.
+4. You have to be careful with cryptographic functions, as automatic tools do not handle them well.
+5. Fuzzing in Foundry and Echidna showed itself to be very weak with contracts in which there is a call to the transferred target and the corresponding data. It would seem that it should be simple: take the target from the known ones, build calldata from the selector and the necessary parameters and execute. But these tools did not cope with this. Probably, this is the reason why I did not find any solution to this problem using fuzzing on the Internet. Preparing such a contract for fuzzing looks more like a headache. And here Halmos showed itself as a very convenient tool.
