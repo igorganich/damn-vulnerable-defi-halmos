@@ -308,3 +308,5 @@ This method also quickly and simply found the attacking transaction.
 3. When we try to migrate a normal Foundry test to Halmos, we need to be careful not to use unsupported functionality from Foundry, or tricky cheat codes like makeAddr()
 4. Getting into recursion should be avoided as it can lead to spurious counterexamples or reduce code coverage
 5. In the case of fairly simple problems with a trivial solution, the solution through fuzzing looks and is much simpler: writing it took ten times less time and effort than solving through Halmos. However, **!!!SPOILER ALERT!!!**, Halmos will show its power in the following less trivial challenges
+## What's next?
+The next article in this series is [Truster](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/truster) cracking.
