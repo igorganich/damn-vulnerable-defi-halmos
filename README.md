@@ -13,10 +13,11 @@ WARNING: This repository is still in progress, so there may not be solutions for
 2. It is expected that the reader is familiar with Damn Vulnerable DeFi and knows how to solve these challenges. Here is a great material with solutions: https://www.youtube.com/playlist?list=PLwHGiYB583YuDoAjKPDfYMKOmuFIGJCnW
 
 # How to read?
-1. Get a list of challenges here: https://www.damnvulnerabledefi.xyz
-2. Go to https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test
-3. Each subfolder should contain README.txt with the article about Halmos solution for this problem. If not - it means that this article is still in progress
-4. Also, this subfolder should contain all the necessary code 
+For reasons of ease of presentation of new material, new techniques, etc., the order of the articles differs from the original order of the challenges. Actually, the order:
+1. [Unstoppable](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/unstoppable)
+2. [Truster](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/truster)
+3. TBD
+4. ...
 
 # Contributions
 Don't be afraid to make pull requests if you have any improvement ideas.
