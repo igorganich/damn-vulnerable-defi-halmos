@@ -20,10 +20,12 @@ contract GlobalStorage is Test, SymTest {
     }
 
     /*
-    ** It is expected to receive a symbolic address as a parameter
-    ** This function should return some concrete address and corresponding data.
-    ** In the case of symbolic execution, the brute force over addresses
-    ** is happening here!
+    ** if addr is a concrete value, this returns (addr, symbolic calldata for addr)
+    ** if addr is symbolic, execution will split for each feasible case and it will return 
+    **      (addr0, symbolic calldata for addr0), (addr1, symbolic calldata for addr1), 
+            ..., and so on (one pair per path)
+    ** if addr is symbolic but has only 1 feasible value (e.g. with vm.assume(addr == ...)), 
+            then it should behave like the concrete case
     */
     function get_concrete_from_symbolic (address /*symbolic*/ addr) public view 
                                         returns (address ret, bytes memory data) 

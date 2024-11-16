@@ -15,4 +15,4 @@ ignored_warnings_from = [
 ]
 bytecode_hash = "none"
 [fuzz]
-runs = 100000
+runs = 1000

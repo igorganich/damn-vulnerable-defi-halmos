@@ -7,7 +7,7 @@ It is strongly assumed that the reader is familiar with the previous article on 
 Based on what we already know, we will again try to make an attacker contract that would symbolically execute some transaction and hope that this will lead to the attack we need. But will it be enough this time?
 ## Preparation for the attack
 ### Common prerequisites 
-1. Copy Truster.t.sol file to Truster_Halmos.t.sol. All Halmos-related changes should be done here.
+1. Copy Truster.t.sol file to TrusterHalmos.t.sol. All Halmos-related changes should be done here.
 2. Rename **"test_truster()"** to **"check_truster()"**, so Halmos will execute this test symbolically.
 3. Avoid using **makeAddr()** cheatcode:
     ```solidity
@@ -63,7 +63,7 @@ function  _isSolved() private {
 ```javascript
 $ halmos --solver-timeout-assertion 0 --function check_truster
 ...
-Running 1 tests for test/truster/Truster_Halmos.t.sol:TrusterChallenge
+Running 1 tests for test/truster/TrusterHalmos.t.sol:TrusterChallenge
 [console.log] token      0x00000000000000000000000000000000000000000000000000000000aaaa0002
 [console.log] pool       0x00000000000000000000000000000000000000000000000000000000aaaa0003
 [console.log] attacker   0x00000000000000000000000000000000000000000000000000000000aaaa0004
@@ -131,7 +131,7 @@ function flashLoan(uint256 amount, address borrower, address target, bytes calld
 Fortunately, Halmos provides a special cheat-code for such cases: svm.createCalldata(). All we need to generate valid calldata is the contract type passed as a parameter to this cheat-code. One of the most obvious ways to use it in our attacker is this piece of code:
 ```solidity
 contract SymbolicAttacker is Test, SymTest {
-	function attack() public {
+    function attack() public {
         address target = svm.createAddress("target");
         bytes memory data;
         vm.assume (target != address(this)); // Avoid recursion
@@ -202,10 +202,12 @@ contract GlobalStorage is SymTest {
     }
 
     /*
-    ** It is expected to receive a symbolic address as a parameter
-    ** This function should return some concrete address and corresponding data.
-    ** In the case of symbolic execution, the brute force over addresses
-    ** is happening here!
+    ** if addr is a concrete value, this returns (addr, symbolic calldata for addr)
+    ** if addr is symbolic, execution will split for each feasible case and it will return 
+    **      (addr0, symbolic calldata for addr0), (addr1, symbolic calldata for addr1), 
+            ..., and so on (one pair per path)
+    ** if addr is symbolic but has only 1 feasible value (e.g. with vm.assume(addr == ...)), 
+            then it should behave like the concrete case
     */
     function get_concrete_from_symbolic (address /*symbolic*/ addr) public view 
                                         returns (address ret, bytes memory data) 
@@ -221,7 +223,7 @@ contract GlobalStorage is SymTest {
 }
 ```
 
-We will not dwell on the implementation details of this contract. I will only say that this is a contract in which you can store address->contract name pairs. And also with its help you can conveniently brute force addresses symbolically. It is easier to show how to use it in practice. First, let's prepare Global Storage in Truster_Halmos.t.sol:
+We will not dwell on the implementation details of this contract. I will only say that this is a contract in which you can store address->contract name pairs. And also with its help you can conveniently brute force addresses symbolically. It is easier to show how to use it in practice. First, let's prepare Global Storage in TrusterHalmos.t.sol:
 ```solidity
 ...
 import "lib/GlobalStorage.sol";
@@ -251,7 +253,7 @@ contract SymbolicAttacker is Test, SymTest {
     // We can hardcode this address for convenience
     GlobalStorage glob = GlobalStorage(address(0xaaaa0002)); 
 
-	function attack() public {
+    function attack() public {
         address target = svm.createAddress("target");
         bytes memory data;
         //Get some concrete target-name pair
@@ -323,7 +325,7 @@ Run:
 ```javascript
 $ halmos --solver-timeout-assertion 0 --function check_truster
 ...
-Running 1 tests for test/truster/Truster_Halmos.t.sol:TrusterChallenge
+Running 1 tests for test/truster/TrusterHalmos.t.sol:TrusterChallenge
 [console.log] glob       0x00000000000000000000000000000000000000000000000000000000aaaa0002
 [console.log] token      0x00000000000000000000000000000000000000000000000000000000aaaa0003
 [console.log] pool       0x00000000000000000000000000000000000000000000000000000000aaaa0004
