@@ -7,6 +7,7 @@ import {IERC3156FlashBorrower} from "@openzeppelin/contracts/interfaces/IERC3156
 import {FlashLoanReceiver} from "./FlashLoanReceiver.sol";
 import {Multicall} from "./Multicall.sol";
 import {WETH} from "solmate/tokens/WETH.sol";
+import {console, Test} from "forge-std/Test.sol";
 
 contract NaiveReceiverPool is Multicall, IERC3156FlashLender {
     uint256 private constant FIXED_FEE = 1e18; // not the cheapest flash loan
@@ -40,10 +41,39 @@ contract NaiveReceiverPool is Multicall, IERC3156FlashLender {
         return FIXED_FEE;
     }
 
+    // savee original function
+    /*
     function flashLoan(IERC3156FlashBorrower receiver, address token, uint256 amount, bytes calldata data)
         external
         returns (bool)
     {
+        vm.assume (address(receiver) == address(0xaaaa0005));
+        if (token != address(weth)) revert UnsupportedCurrency();
+
+        // Transfer WETH and handle control to receiver
+        weth.transfer(address(receiver), amount);
+        totalDeposits -= amount;
+
+        if (receiver.onFlashLoan(msg.sender, address(weth), amount, FIXED_FEE, data) != CALLBACK_SUCCESS) {
+            revert CallbackFailed();
+        }
+
+        uint256 amountWithFee = amount + FIXED_FEE;
+        weth.transferFrom(address(receiver), address(this), amountWithFee);
+        totalDeposits += amountWithFee;
+
+        deposits[feeReceiver] += FIXED_FEE;
+
+        return true;
+    }*/
+
+
+    // optimized flashLoan
+    function flashLoan(IERC3156FlashBorrower receiver, address token, uint256 amount, bytes calldata data)
+        external
+        returns (bool)
+    {
+        vm.assume (address(receiver) == address(0xaaaa0006));
         if (token != address(weth)) revert UnsupportedCurrency();
 
         // Transfer WETH and handle control to receiver
@@ -64,6 +94,7 @@ contract NaiveReceiverPool is Multicall, IERC3156FlashLender {
     }
 
     function withdraw(uint256 amount, address payable receiver) external {
+        console.log("withdraw");
         // Reduce deposits
         deposits[_msgSender()] -= amount;
         totalDeposits -= amount;
@@ -85,6 +116,7 @@ contract NaiveReceiverPool is Multicall, IERC3156FlashLender {
 
     function _msgSender() internal view override returns (address) {
         if (msg.sender == trustedForwarder && msg.data.length >= 20) {
+            console.log(address(bytes20(msg.data[msg.data.length - 20:])));
             return address(bytes20(msg.data[msg.data.length - 20:]));
         } else {
             return super._msgSender();

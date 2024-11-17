@@ -6,11 +6,15 @@ import {EIP712} from "solady/utils/EIP712.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 
+import {Test} from "forge-std/Test.sol";
+import "lib/GlobalStorage.sol";
+
 interface IHasTrustedForwarder {
     function trustedForwarder() external view returns (address);
 }
 
-contract BasicForwarder is EIP712 {
+contract BasicForwarder is EIP712, Test, SymTest {
+    GlobalStorage glob = GlobalStorage(address(0xaaaa0002));
     struct Request {
         address from;
         address target;
@@ -41,6 +45,9 @@ contract BasicForwarder is EIP712 {
      * - Target a contract that accepts this forwarder
      * - Be signed by the original sender (`from` field)
      */
+
+    // Save original
+    /*
     function _checkRequest(Request calldata request, bytes calldata signature) private view {
         if (request.value != msg.value) revert InvalidValue();
         if (block.timestamp > request.deadline) revert OldRequest();
@@ -50,8 +57,17 @@ contract BasicForwarder is EIP712 {
 
         address signer = ECDSA.recover(_hashTypedData(getDataHash(request)), signature);
         if (signer != request.from) revert InvalidSigner();
-    }
+    }*/
 
+    // optimized version
+    /*function _checkRequest(Request calldata request, bytes calldata signature) private view {
+        if (request.value != msg.value) revert InvalidValue();
+        if (block.timestamp > request.deadline) revert OldRequest();
+        if (nonces[request.from] != request.nonce) revert InvalidNonce();
+    }*/
+
+// save  original function
+/*
     function execute(Request calldata request, bytes calldata signature) public payable returns (bool success) {
         _checkRequest(request, signature);
 
@@ -62,6 +78,7 @@ contract BasicForwarder is EIP712 {
         address target = request.target;
         bytes memory payload = abi.encodePacked(request.data, request.from);
         uint256 forwardGas = request.gas;
+        glob.
         assembly {
             success := call(forwardGas, target, value, add(payload, 0x20), mload(payload), 0, 0) // don't copy returndata
             gasLeft := gas()
@@ -72,6 +89,26 @@ contract BasicForwarder is EIP712 {
                 invalid()
             }
         }
+    }
+*/
+
+    function execute(Request calldata request, bytes calldata signature) public payable returns (bool success) {
+        //_checkRequest(request, signature);
+
+        vm.assume(request.from == address(0xcafe0001));
+        nonces[request.from]++;
+
+        uint256 gasLeft;
+        uint256 value = request.value; // in wei
+        address target = request.target;
+        bytes memory payload = abi.encodePacked(request.data, request.from);
+        uint256 forwardGas = request.gas;
+        // Work with "newdata" like this is the "data"
+        bytes memory newdata = svm.createCalldata("NaiveReceiverPool");
+        //bytes memory newdata = svm.createBytes(100, "newdata_bytes");
+        vm.assume(target == address(0xaaaa0005));
+        vm.assume(bytes4(newdata) == bytes4(keccak256("multicall()")));
+        target.call(newdata);
     }
 
     function _domainNameAndVersion() internal pure override returns (string memory name, string memory version) {

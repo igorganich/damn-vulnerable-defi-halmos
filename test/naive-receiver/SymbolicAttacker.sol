@@ -20,5 +20,6 @@ contract SymbolicAttacker is Test, SymTest {
 
 	function attack() public {
         execute_tx();
+        //execute_tx();
     }
 }
