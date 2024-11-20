@@ -4,6 +4,7 @@ pragma solidity =0.8.25;
 
 import {IERC3156FlashBorrower} from "@openzeppelin/contracts/interfaces/IERC3156FlashBorrower.sol";
 import {WETH, NaiveReceiverPool} from "./NaiveReceiverPool.sol";
+import {console, Test} from "forge-std/Test.sol";
 
 contract FlashLoanReceiver is IERC3156FlashBorrower {
     address private pool;

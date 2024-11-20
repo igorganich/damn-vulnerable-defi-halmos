@@ -11,23 +11,32 @@ abstract contract Multicall is Context, Test, SymTest {
     GlobalStorage glob = GlobalStorage(address(0xaaaa0002));
 
     // save original function
-    /*function multicall(bytes[] calldata data) external virtual returns (bytes[] memory results) {
+    /*
+    function multicall(bytes[] calldata data) external virtual returns (bytes[] memory results) {
         results = new bytes[](data.length);
         for (uint256 i = 0; i < data.length; i++) {
             results[i] = Address.functionDelegateCall(address(this), data[i]);
         }
         return results;
-    }*/
+    }
+    */
 
     // symbolic multicall
-    function multicall() external virtual returns (bytes[] memory results) {
+    function multicall(bytes[] calldata data) external virtual returns (bytes[] memory results) {
         results = new bytes[](1);
         address target = address(this);
         bytes memory newdata = svm.createCalldata("NaiveReceiverPool");
+        //bytes memory newdata = svm.createBytes(10000, "multicall_newdata");
         bytes4 selector = svm.createBytes4("selector");
         vm.assume (bytes4(newdata) == selector);
         // avoid recursion
         vm.assume (selector != this.multicall.selector);
+        // if selector is withdraw function
+        if (selector == bytes4(keccak256("withdraw(uint256,address)")))
+        {
+            newdata = svm.createBytes(100, "multicall_newdata");
+            vm.assume (bytes4(newdata) == selector);
+        }
         results[0] = Address.functionDelegateCall(target, newdata);
         return results;
     }

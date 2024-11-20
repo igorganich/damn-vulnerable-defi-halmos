@@ -47,7 +47,6 @@ contract NaiveReceiverPool is Multicall, IERC3156FlashLender {
         external
         returns (bool)
     {
-        vm.assume (address(receiver) == address(0xaaaa0005));
         if (token != address(weth)) revert UnsupportedCurrency();
 
         // Transfer WETH and handle control to receiver
@@ -65,8 +64,8 @@ contract NaiveReceiverPool is Multicall, IERC3156FlashLender {
         deposits[feeReceiver] += FIXED_FEE;
 
         return true;
-    }*/
-
+    }
+    */
 
     // optimized flashLoan
     function flashLoan(IERC3156FlashBorrower receiver, address token, uint256 amount, bytes calldata data)
@@ -79,6 +78,8 @@ contract NaiveReceiverPool is Multicall, IERC3156FlashLender {
         // Transfer WETH and handle control to receiver
         weth.transfer(address(receiver), amount);
         totalDeposits -= amount;
+
+        //bytes memory newdata = svm.createBytes(100, "flashLoan_newdata");
 
         if (receiver.onFlashLoan(msg.sender, address(weth), amount, FIXED_FEE, data) != CALLBACK_SUCCESS) {
             revert CallbackFailed();
@@ -116,7 +117,6 @@ contract NaiveReceiverPool is Multicall, IERC3156FlashLender {
 
     function _msgSender() internal view override returns (address) {
         if (msg.sender == trustedForwarder && msg.data.length >= 20) {
-            console.log(address(bytes20(msg.data[msg.data.length - 20:])));
             return address(bytes20(msg.data[msg.data.length - 20:]));
         } else {
             return super._msgSender();
