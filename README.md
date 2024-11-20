@@ -6,6 +6,8 @@ Since theredguild have released Damn Vulnerable Defi v4, that is fully migrated 
 
 This material should be considered as a tutorial about possibilities of using Halmos against CTFs or building attacks on smart contracts.
 
+A comparison with fuzzing techniques using Foundry fuzzing and Echidna in the context of Damn Vulnerable DeFi solutions was also described.
+
 WARNING: This repository is still in progress, so there may not be solutions for all problems.
 
 # Prerequisites
