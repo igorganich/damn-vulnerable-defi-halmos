@@ -503,8 +503,7 @@ function test_naiveReceiver() public checkSolvedByPlayer {
     require(forwarder.execute(request, signature));
 }
 ```
-Since we crafted the request ourselves, because we couldn't use calldata from Halmos for obvious reasons - I just copied this request from [here](https://medium.com/@opensiddhu993/challenge-2-naive-receiver-damn-vulnerable-defi-v4-lazy-solutions-series-8b3b28bc929d) :).
-h/t @siddharth9903
+Since we crafted the request ourselves, because we couldn't use calldata from Halmos for obvious reasons - I just copied this request from [here](https://medium.com/@opensiddhu993/challenge-2-naive-receiver-damn-vulnerable-defi-v4-lazy-solutions-series-8b3b28bc929d) by [@siddharth9903](https://github.com/siddharth9903) :).
 
 ```javascript
 $ forge test -vv --mp test/naive-receiver/NaiveReceiver.t.sol
@@ -513,7 +512,7 @@ Suite result: ok. 2 passed; 0 failed; 0 skipped; finished in 2.53ms (1.50ms CPU 
 ```
 Did it!
 ## Compare with fuzzing
-We can find foundry-based, echidna-based and meduza-based solutions to this problem [here](https://github.com/devdacian/solidity-fuzzing-comparison/tree/main/test/01-naive-receiver)
+We can find foundry-based, echidna-based and meduza-based solutions to this problem [here](https://github.com/devdacian/solidity-fuzzing-comparison/tree/main/test/01-naive-receiver).
 However, I haven't found any solutions for the updated version of Naive-receiver (v4). The fact is that a second bug was added in the new version, which is tied precisely to the calldata craft and in **"Truster"** it almost became a blocker. Therefore, let's check whether there are fuzzers at all are able to work out the following logic.
 ### Target
 First, write this POCTarget contract:
@@ -615,4 +614,4 @@ Also not working. I think these results are enough to prove that Foundry and Ech
 2. You can and should use simplifications and optimizations. Sometimes nothing will work without it. The main thing is to choose heuristics successfully.
 3. When creating invariants, you can follow the principle "If we can do something UNEXPECTED - we will easily find a full-fledged attack".
 4. It is important to understand when it is better to use **svm.CreateCalldata()** and when to use **svm.createBytes()**. Each has its own unique areas of application.
-5. Even given that we gave a strong hint that svm.createBytes() should be used at withdraw-> function, Halmos did a great job of handling the raw calldata to find a bug, unlike Echidna and Foundry. The new version of Naive-receiver is not completely solved by fuzzing.
+5. Even given that we gave a strong hint that **svm.createBytes()** should be used at **withdraw->_msgSender()** function, Halmos did a great job of handling the raw calldata to find a bug, unlike Echidna and Foundry. The new version of Naive-receiver is not completely solved by fuzzing.
