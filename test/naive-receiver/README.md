@@ -394,12 +394,12 @@ function multicall() external virtual returns (bytes[] memory results) {
 }
 ```
 ### A simplified invariant
-So far, we have used invariants that directly gave us the solution to the problem. But if we cannot find a direct solution, we will apply other principles. First, let's remove the condition that the assets must be on recovery. Let's rationalize it by the fact that if we can find an attack at all that will steal funds from target addresses, the way to transfer them to recovery should be obvious. As a result, we will probably save on the number of necessary symbolic transactions (for example, we will not need to call **ERC20::transfer(recovery, funds)**):
+So far, we have used invariants that directly gave us the solution to the problem. But if we cannot find a direct solution, we will apply other principles. First, let's remove the condition that the assets must be on recovery. Let's rationalize it by the fact that if we can find an attack at all that will steal funds from target addresses, the way to transfer them to recovery should be obvious. As a result, we will probably save on the number of necessary symbolic transactions:
 ```solidity
 function _isSolved() private view {
     ...
-    assert( weth.balanceOf(address(receiver)) != 0 || 
-            weth.balanceOf(address(pool)) != 0 ); 
+    assert (weth.balanceOf(address(receiver)) != 0 || 
+            weth.balanceOf(address(pool)) != 0); 
 ```
 But let's go even further. Let's try to find out if we can reduce the target contract balances at all. Maybe that will give us an idea for an attack:
 ```solidity
@@ -412,7 +412,8 @@ Run:
 ```javascript
 $ halmos --solver-timeout-assertion 0 --function check_naiveReceiver
 ...
-Counterexample:                                                                                                                                                                                                                           halmos_multicall_newdata_bytes_e2c4a17_67 = 0x00f714ce0000000000000000000000000000000000000000000000070800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000cafe0000
+Counterexample:
+halmos_multicall_newdata_bytes_e2c4a17_67 = 0x00f714ce0000000000000000000000000000000000000000000000070800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000cafe0000
 halmos_selector_bytes4_2b51260_47 = execute
 halmos_selector_bytes4_acafed2_66 = withdraw
 halmos_selector_bytes4_e0bb9db_14 = execute
