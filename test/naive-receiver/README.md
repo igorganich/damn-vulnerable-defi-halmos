@@ -379,7 +379,7 @@ function _msgSender() internal view override returns (address) {
 Here, **msg.data** works like a normal byte array. In such cases, it is much better to use **svm.createBytes()** instead of **svm.CreateCalldata()**, if you call such a function symbolically, so that Halmos behaves more flexibly and can find more subtle bugs tied specifically to unexpected calldata crafting. The only place we can get here from is **multicall->withdraw**. Therefore, let's change our **multicall** somewhat:
 ```solidity
 // symbolic multicall
-function multicall() external virtual returns (bytes[] memory results) {
+function multicall(bytes[] calldata data) external virtual returns (bytes[] memory results) {
     ...
     bytes memory newdata = svm.createCalldata("NaiveReceiverPool");
     ...
