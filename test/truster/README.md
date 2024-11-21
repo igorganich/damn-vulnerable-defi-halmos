@@ -777,3 +777,5 @@ such tasks generally possible for Halmos.
 3. If the target contract needs some changes, don't be afraid to make them. The main thing is to understand what we are doing so as not to affect the result.
 4. You have to be careful with cryptographic functions, as automatic tools do not handle them well.
 5. Fuzzing in Foundry and Echidna showed itself to be very weak with contracts in which there is a call to the transferred target and the corresponding data. It would seem that it should be simple: take the target from the known ones, build calldata from the selector and the necessary parameters and execute. But these tools did not cope with this. Probably, this is the reason why I did not find any solution to this problem using fuzzing on the Internet. Preparing such a contract for fuzzing looks more like a headache. And here Halmos showed itself as a very convenient tool.
+## What's next?
+The next article in this series is [Naive-receiver](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/naive-receiver) solving.
