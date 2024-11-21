@@ -127,7 +127,7 @@ WARNING:halmos:check_naiveReceiver(): all paths have been reverted; the setup st
 (see https://github.com/a16z/halmos/wiki/warnings#revert-all)
 [ERROR] check_naiveReceiver() (paths: 0, time: 0.07s, bounds: [])
 ```
-This is a known Halmos issue https://github.com/a16z/halmos/issues/338 which has not yet been fixed at the time of writing. We will not delve into the very cause of this problem. I will say only that there is an easy bypass for it. Just change
+This is a known Halmos [issue](https://github.com/a16z/halmos/issues/338) which has not yet been fixed at the time of writing. We will not delve into the very cause of this problem. I will say only that there is an easy bypass for it. Just change
 ```solidity
 startHoax(deployer);
 ```
