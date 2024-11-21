@@ -434,8 +434,52 @@ p_token_address_a8696b9_27 = 0x0000000000000000000000000000000000000000000000000
 [FAIL] check_naiveReceiver() (paths: 20371, time: 1592.14s, bounds: [])
 ```
 Counterexample is found!
-## Counterexample analysis
-This time we will not analyze each line of the counterexample in detail. Note that 2 bugs were found here at once.
+### Another way
+Before proceeding to the analysis of the counterexample, it is worth saying that a similar result could have been achieved in an easier way. Instead of sacrificing possible scenarios, we could sacrifice the number of symbolic transactions executed (executing only one symbolic transaction), simplifying the invariant even more. We could try to "bite in small pieces" and find these invariant counterexamples independently of each other. So
+1. Return **NaiveReceiverPool** to **GlobalStorage**
+    ```solidity
+    glob.add_addr_name_pair(address(weth), "WETH");
+    glob.add_addr_name_pair(address(forwarder), "BasicForwarder");
+    glob.add_addr_name_pair(address(pool), "NaiveReceiverPool");
+    ```
+2. Let's go back to the single symbolic transaction
+    ```solidity
+    function attack() public {
+        execute_tx();
+        //execute_tx();
+    }
+    ```
+3. Split invariants
+    ```solidity
+    function _isSolved() private view {
+        assert (weth.balanceOf(address(pool)) >= WETH_IN_POOL);
+        assert (weth.balanceOf(address(receiver)) >= WETH_IN_RECEIVER);
+    }
+    ```
+Run:
+```javascript
+$ halmos --solver-timeout-assertion 0 --function check_naiveReceiver --loop 3
+...
+Counterexample:
+halmos_selector_bytes4_0f6d90c_16 = flashLoan
+halmos_target_address_b163b06_01 = 0x00000000000000000000000000000000aaaa0005
+p_amount_uint256_0638d47_06 = 0x0000000000000000000000000000000000000000000000000000000000000000
+p_data_length_98af919_08 = 0x0000000000000000000000000000000000000000000000000000000000000000
+p_receiver_address_61d6d2d_04 = 0x00000000000000000000000000000000000000000000000000000000aaaa0006
+p_token_address_383970d_05 = 0x00000000000000000000000000000000000000000000000000000000aaaa0003
+...
+Counterexample:
+halmos_multicall_newdata_bytes_4d9e59c_44 = 0x00f714ce00000000000000000000000000000000000000000000003635c9adc5dea00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000cafe0000
+halmos_selector_bytes4_2d91fe2_43 = withdraw
+halmos_selector_bytes4_ee6acf1_14 = execute
+halmos_target_address_b163b06_01 = 0x00000000000000000000000000000000aaaa0004
+p_data_length_b44e459_22 = 0x0000000000000000000000000000000000000000000000000000000000000002
+p_request.from_address_54c3352_04 = 0x00000000000000000000000000000000000000000000000000000000cafe0001
+p_request.target_address_a92dbac_05 = 0x00000000000000000000000000000000000000000000000000000000aaaa0005
+p_signature_length_8d509fd_13 = 0x0000000000000000000000000000000000000000000000000000000000000400
+```
+## Counterexamples analysis
+Note that 2 bugs were found here at once.
 The mechanics of the first bug are quite simple - we launch **flashLoan**, as the receiver we specify the **FlashLoanReceiver** contract, which we do not own, thereby emptying it by 1 **WETH** per transaction. Precisely because it takes 10 such transactions to empty this balance to 0 - Halmos failed with a clearer invariant.
 The mechanics of the second bug are very interesting. The fact is that for this we need to fulfill 2 conditions: run **withdraw** with **Forwarder** as a **msg.sender**, but at the same time bypass the concatenation of our address at the end of the **payload**:
 ```solidity
