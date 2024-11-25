@@ -293,7 +293,7 @@ $ forge test --mp test/side-entrance/SideEntrance.t.sol
 ```
 Another Damn Vulnerable Defi challenge solved!
 ## Fuzzing vs Side-entrance
-I found some solutions to this problem by fuzzing on the internet. First one is [this article](https://www.rareskills.io/post/invariant-testing-solidity) by **Team RareSkills**. But there is a problem with this solution: they used a **Handler** that was written in such a way that the **Foundry** fuzzer "knows" in advance what the bug is and how to exploit it. That is, they gave the fuzzer too big hint:
+I found some solutions to this problem by fuzzing on the internet. First one is [this article](https://www.rareskills.io/post/invariant-testing-solidity) by **Team RareSkills**. But there is an issue with this solution: they used a **Handler** that was written in such a way that the **Foundry** fuzzer "knows" in advance what the bug is and how to exploit it. That is, they gave the fuzzer too big hint:
 ```solidity
 import {SideEntranceLenderPool} from "../../src/SideEntranceLenderPool.sol";
 
@@ -331,11 +331,11 @@ contract Handler is Test {
     receive() external payable {}
 }
 ```
-In my opinion, fuzzing through such a **Handler** is not enough to say that the **Foundry** is really capable of finding this kind of bugs.
+In my opinion, using such a **Handler** is not enough to say that the fuzzing is really capable of finding this kind of bugs.
 
-Another solution is made by the **Crytic team** and can be found [at this link](https://github.com/crytic/building-secure-contracts/blob/master/program-analysis/echidna/exercises/exercise7/solution.sol). Here the situation is much better: the solution is abstract enough and gives space for **Echidna** itself to find a bug. Besides, it only took a few seconds to find the bug.
+Another solution is made by the **Crytic team** and can be found [at this link](https://github.com/crytic/building-secure-contracts/blob/master/program-analysis/echidna/exercises/exercise7/solution.sol). Here the situation is much better: the solution is abstract enough and gives space for **Echidna** itself to find a bug. Besides, it only took a few seconds to solve it.
 
-Let's compare how **Echidna** and **Halmos** solve the problem of "taking into account that any function can be executed inside **execute()**".
+Let's compare how **Echidna** and **Halmos** deal with the problem of "taking into account that any function can be executed inside **execute()**".
 
 Echidna:
 ```solidity
