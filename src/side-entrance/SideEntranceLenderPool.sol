@@ -8,11 +8,6 @@ interface IFlashLoanEtherReceiver {
     function execute() external payable;
 }
 
-interface IFlashLoanEtherReceiverEchidna {
-    function execute(bool is_flashLoan, bool is_withdraw,
-                        uint256 uint256_param1) external payable;
-}
-
 contract SideEntranceLenderPool {
     mapping(address => uint256) public balances;
 
@@ -41,18 +36,6 @@ contract SideEntranceLenderPool {
         uint256 balanceBefore = address(this).balance;
 
         IFlashLoanEtherReceiver(msg.sender).execute{value: amount}();
-
-        if (address(this).balance < balanceBefore) {
-            revert RepayFailed();
-        }
-    }
-
-    // flashLoan for fuzzing
-    function _flashLoan(uint256 amount, uint256 uint256_param1,
-                        bool bool_param1, bool bool_param2) external {
-        uint256 balanceBefore = address(this).balance;
-
-        IFlashLoanEtherReceiverEchidna(msg.sender).execute{value: amount}(bool_param1, bool_param2, uint256_param1);
 
         if (address(this).balance < balanceBefore) {
             revert RepayFailed();
