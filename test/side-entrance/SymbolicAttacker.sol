@@ -5,7 +5,6 @@ pragma solidity =0.8.25;
 import "halmos-cheatcodes/SymTest.sol";
 import "forge-std/Test.sol";
 import "lib/GlobalStorage.sol";
-import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 contract SymbolicAttacker is Test, SymTest {
     // We can hardcode this address for convenience
