@@ -72,7 +72,7 @@ function _isSolved() private view {
 }
 ```
 ### SymbolicAttacker implementation
-In this challenge, we first encounter the logic of using native **ETH** assets instead of some token or wrapped **ETH** (**WETH**). Therefore, it is natural that **SymbolicAttacker** should also consider **ETH** value in transactions. First, when we deploy a contract, Halmos correctly assumes that its balance may already be non-zero, preventing a possible [force feeding](https://consensys.github.io/smart-contract-best-practices/development-recommendations/general/force-feeding/) scenario. Therefore, as soon as we have deployed the contract, its **ETH** balance is already a symbolic value. However, this is inconvenient in our case, so we will explicitly state that **SymbolicAttacker**'s balance is **player**'s balance. We still can execute transactions from **player** since Halmos doesn't count gas :):
+In this challenge, we encounter the logic of using native **ETH** assets instead of some token or wrapped **ETH** (**WETH**) for the first time. Therefore, it is natural that **SymbolicAttacker** should also consider **ETH** value in transactions. First, when we deploy a contract, Halmos correctly assumes that its balance may already be non-zero, preventing a possible [force feeding](https://consensys.github.io/smart-contract-best-practices/development-recommendations/general/force-feeding/) scenario. Therefore, as soon as we have deployed the contract, its **ETH** balance is already a symbolic value. However, this is inconvenient in our case, so we will explicitly state that **SymbolicAttacker**'s balance is **player**'s balance. We still can execute transactions from **player** since Halmos doesn't count gas :):
 ```solidity
 function check_sideEntrance() public checkSolvedByPlayer {
     SymbolicAttacker attacker = new SymbolicAttacker();
@@ -134,7 +134,7 @@ contract SideEntranceLenderPool {
     ...
     }
 ```
-We implement a valid **execute()**:
+Obviously, we need to implement some **execute()** function inside of **SymbolicAttacker**. But what should be there? Literally anything can be executed during this function... Actually, this is the answer - we work with it as with **attack()** - a number of symbolic subtransactions are simply executed inside. Let's start with one, and then we'll see if it's enough.
 ```solidity
 function execute () external payable {
     uint256 ETH_val = svm.createUint256("ETH_val_execute");
