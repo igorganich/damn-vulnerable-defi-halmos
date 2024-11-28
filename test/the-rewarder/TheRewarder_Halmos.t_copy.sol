@@ -12,8 +12,8 @@ import "../../lib/SharedGlobalData.sol";
 import "./AbstractAttacker.sol";
 
 contract TheRewarderChallenge is Test {
-    address deployer = address(0xde4107e4);
-    address recovery = address(0xa77ac3e5);
+    address deployer = address(0xcafe0000);
+    address recovery = address(0xcafe0002);
     address alice = address(0x328809Bc894f92807417D2dAD6b7C998c1aFdac6);
     address player = address(0x44E97aF4418b7a17AABD8090bEA0A471a366305C);
 
@@ -171,7 +171,7 @@ contract TheRewarderChallenge is Test {
     /**
      * CODE YOUR SOLUTION HERE
      */
-    function check_theRewarder() public checkSolvedByPlayer {
+    function old_check_theRewarder_old() public checkSolvedByPlayer {
         console.log("balance in start");
         console.log(dvt.balanceOf(address(distributor)));
         AbstractAttacker attacker = new AbstractAttacker();
