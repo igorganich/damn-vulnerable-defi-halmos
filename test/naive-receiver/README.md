@@ -336,13 +336,21 @@ vm.assume(request.from == address(0xcafe0001));
 ...
 ```
 And in _checkRequest itself, we will remove these checks.
+
 Try again:
 ```javascript
 $ halmos --solver-timeout-assertion 0 --function check_naiveReceiver --loop 3
 ...
 killed
 ```
-No, it's still too hard. Much stronger heuristics are needed.
+No, it's still too hard. 
+
+Before continuing, it is worth noting that we could go further in this direction and there is still space for optimizations from the environment settings and Halmos itself. For example,
+1. Reduce parallelism (using a lower value for `--solver-threads N` Halmos option).
+2. Since the standard `z3` solver is quite greedy in terms of resources, we can use a different solver, e.g. `--solver-command yices-smt2`.
+3. Use a cloud machine with more memory.
+
+But since less brutal ways of solving resource problems are already suggested, we will try to use some heuristics.
 ## Heuristics
 We have reached the point where we can no longer operate with only stable improvements and expect Halmos to give us a solution to the problem in such a clear form as in past challenges. Will have to try to apply some relief by sacrificing likely scenarios that could be covered symbolically.
 ### Proxy heuristics
