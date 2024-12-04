@@ -6,27 +6,26 @@ import {Test, console} from "forge-std/Test.sol";
 import {NaiveReceiverPool, Multicall, WETH} from "../../src/naive-receiver/NaiveReceiverPool.sol";
 import {FlashLoanReceiver} from "../../src/naive-receiver/FlashLoanReceiver.sol";
 import {BasicForwarder} from "../../src/naive-receiver/BasicForwarder.sol";
-
-import "../../lib/SharedGlobalData.sol";
-import "./AbstractAttacker.sol";
+import "lib/GlobalStorage.sol";
+import "./SymbolicAttacker.sol";
 
 contract NaiveReceiverChallenge is Test {
-    address deployer = address(0xde4107e4);
-    address recovery = address(0xa77ac3e5);
-    address player = address(0xa77ac3e4);
-    //uint256 playerPk;
+    address deployer = address(0xcafe0000);
+    address recovery = address(0xcafe0002);
+    address player;
+    uint256 playerPk;
 
     uint256 constant WETH_IN_POOL = 1000e18;
     uint256 constant WETH_IN_RECEIVER = 10e18;
 
-    SharedGlobalData shared_data;
+    GlobalStorage glob;
     NaiveReceiverPool pool;
     WETH weth;
     FlashLoanReceiver receiver;
     BasicForwarder forwarder;
 
     modifier checkSolvedByPlayer() {
-        vm.startPrank(player);
+        vm.startPrank(player, player);
         _;
         vm.stopPrank();
         _isSolved();
@@ -37,34 +36,28 @@ contract NaiveReceiverChallenge is Test {
      */
     function setUp() public {
         //(player, playerPk) = makeAddrAndKey("player");
+        player = address(0xcafe0001);
         startHoax(deployer, 1 << 80);
-        shared_data = new SharedGlobalData();
+
+        glob = new GlobalStorage();
+
         // Deploy WETH
         weth = new WETH();
+
         // Deploy forwarder
         forwarder = new BasicForwarder();
+
         // Deploy pool and fund with ETH
         pool = new NaiveReceiverPool{value: WETH_IN_POOL}(address(forwarder), payable(weth), deployer);
+
         // Deploy flashloan receiver contract and fund it with some initial WETH
         receiver = new FlashLoanReceiver(address(pool));
         weth.deposit{value: WETH_IN_RECEIVER}();
         weth.transfer(address(receiver), WETH_IN_RECEIVER);
 
-        console.log("shared_data", address(shared_data));
-        console.log("weth", address(weth));
-        console.log("forwarder", address(forwarder));
-        console.log("pool", address(pool));
-        console.log("receiver", address(receiver));
-        console.log("deployer", address(deployer));
-        console.log("recovery", address(recovery));
-        console.log("player", address(player));
-
-        // Add known contracts to list
-        shared_data.add_known_address(address(weth));
-        shared_data.add_known_address(address(forwarder));
-        shared_data.add_known_address(address(pool));
-        shared_data.add_known_address(address(receiver));
-
+        glob.add_addr_name_pair(address(weth), "WETH");
+        glob.add_addr_name_pair(address(forwarder), "BasicForwarder");
+        //glob.add_addr_name_pair(address(pool), "NaiveReceiverPool");
         vm.stopPrank();
     }
 
@@ -93,8 +86,15 @@ contract NaiveReceiverChallenge is Test {
      * CODE YOUR SOLUTION HERE
      */
     function check_naiveReceiver() public checkSolvedByPlayer {
-        console.log (address(645326474426547203313410069153905908525362434349));
-        AbstractAttacker attacker = new AbstractAttacker();
+        SymbolicAttacker attacker = new SymbolicAttacker();
+        console.log("GlobalStorage\t", address(glob));
+        console.log("WETH\t\t", address(weth));
+        console.log("BasicForwarder\t", address(forwarder));
+        console.log("NaiveReceiverPool\t", address(pool));
+        console.log("FlashLoanReceiver\t", address(receiver));
+        console.log("attacker\t\t", address(attacker));
+        console.log(weth.balanceOf(address(pool)));
+        console.log(weth.balanceOf(address(pool)) == 1000e18);
         attacker.attack();
     }
 
@@ -102,18 +102,7 @@ contract NaiveReceiverChallenge is Test {
      * CHECKS SUCCESS CONDITIONS - DO NOT TOUCH
      */
     function _isSolved() private view {
-        // Player must have executed two or less transactions
-        //assertLe(vm.getNonce(player), 2);
-
-        // The flashloan receiver contract has been emptied
-        //assert(weth.balanceOf(address(receiver)) > 7e18);
-        //assert(weth.balanceOf(address(receiver)) != 0);
-        //assert(weth.balanceOf(address(receiver)) != 0 || weth.balanceOf(address(pool)) != 0);
-
-        // Pool is empty too
-        assert (weth.balanceOf(address(pool)) != 0);
-
-        // All funds sent to recovery account
-        //assertEq(weth.balanceOf(recovery), WETH_IN_POOL + WETH_IN_RECEIVER, "Not enough WETH in recovery account");
+        assert (weth.balanceOf(address(pool)) >= WETH_IN_POOL || 
+                weth.balanceOf(address(receiver)) >= WETH_IN_RECEIVER);
     }
 }

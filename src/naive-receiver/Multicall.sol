@@ -4,35 +4,40 @@ pragma solidity =0.8.25;
 
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {Context} from "@openzeppelin/contracts/utils/Context.sol";
-import {Test, console} from "forge-std/Test.sol";
-import "../../lib/halmos-cheatcodes/src/SymTest.sol";
-import "./NaiveReceiverPool.sol";
-import "../../lib/SharedGlobalData.sol";
+import "lib/GlobalStorage.sol";
 
-abstract contract Multicall is Context, SymTest {
-    SharedGlobalData shared_data = SharedGlobalData(address(0x00000000000000000000000000000000000000000000000000000000aaaa0002));
-    bool anti_recursion = false;
+abstract contract Multicall is Context, Test, SymTest {
 
-    function multicall(uint256 data_id /*bytes[] calldata data*/) external virtual returns (bytes[] memory results) {
-        if (anti_recursion == false)
-            anti_recursion = true;
-        else {
-            revert();
-        }
-        console.log ("multicall");
-        bytes[1] memory data;
+    GlobalStorage glob = GlobalStorage(address(0xaaaa0002));
+
+    // save original function
+    /*
+    function multicall(bytes[] calldata data) external virtual returns (bytes[] memory results) {
         results = new bytes[](data.length);
-        //bytes memory call = abi.encodeCall(NaiveReceiverPool.withdraw, (100, payable(address(0x00000000000000000000000000000000000000000000000000000000a77ac3e5))));
         for (uint256 i = 0; i < data.length; i++) {
-            console.log ("loop");
-            console.log (i);
-            console.log(data_id);
-            data[i] = shared_data.get_known_data(data_id);
-            //data[i] = svm.createBytes(100, 'multicall_data');
             results[i] = Address.functionDelegateCall(address(this), data[i]);
-            //results[i] = Address.functionDelegateCall(address(this), call);
         }
-        anti_recursion = false;
+        return results;
+    }
+    */
+
+    // symbolic multicall
+    function multicall(bytes[] calldata data) external virtual returns (bytes[] memory results) {
+        results = new bytes[](1);
+        address target = address(this);
+        bytes memory newdata = svm.createCalldata("NaiveReceiverPool");
+        //bytes memory newdata = svm.createBytes(10000, "multicall_newdata");
+        bytes4 selector = svm.createBytes4("selector");
+        vm.assume (bytes4(newdata) == selector);
+        // avoid recursion
+        vm.assume (selector != this.multicall.selector);
+        // if selector is withdraw function
+        if (selector == bytes4(keccak256("withdraw(uint256,address)")))
+        {
+            newdata = svm.createBytes(100, "multicall_newdata");
+            vm.assume (bytes4(newdata) == selector);
+        }
+        results[0] = Address.functionDelegateCall(target, newdata);
         return results;
     }
 }
