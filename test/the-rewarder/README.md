@@ -158,9 +158,9 @@ function getRoot(bytes32[] memory data) public pure virtual returns (bytes32) {
 ```
 Halmos doesn't do well with large loops. Of course, we can try running Halmos with a big enough `--loop` option. But here we encounter another issue. The easiest way to show this is by adding some logging:
 ```solidity
-console.log("start get root");
+console.log("start get root 1");
 dvtRoot = merkle.getRoot(dvtLeaves);
-console.log("end get root");
+console.log("end get root 1");
 console.log("start get root 2");
 wethRoot = merkle.getRoot(wethLeaves);
 console.log("end get root 2");
@@ -465,9 +465,9 @@ function test_theRewarder() public checkSolvedByPlayer {
     }
     for (uint256 i = 0; i < wethAttackCount; i++) {
         claims[dvtAttackCount + i] = Claim({
-        batchNumber: 0, // claim corresponds to first DVT batch
+        batchNumber: 0, // claim corresponds to first WETH batch
         amount: wethPlayerReward,
-        tokenIndex: 1, // claim corresponds to first token in `tokensToClaim` array
+        tokenIndex: 1, // claim corresponds to second token in `tokensToClaim` array
         proof: merkle.getProof(wethLeaves, 188) // player's address is at index 188
         });
     }
