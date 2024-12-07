@@ -4,23 +4,22 @@ pragma solidity =0.8.25;
 
 import {Test, console} from "forge-std/Test.sol";
 import {SideEntranceLenderPool} from "../../src/side-entrance/SideEntranceLenderPool.sol";
-
-import "../../lib/SharedGlobalData.sol";
-import "./AbstractAttacker.sol";
+import "lib/GlobalStorage.sol";
+import "./SymbolicAttacker.sol";
 
 contract SideEntranceChallenge is Test {
-    address deployer = address(0xde4107e4);
-    address recovery = address(0xa77ac3e5);
-    address player = address(0xa77ac3e4);
+    address deployer = address(0xcafe0000);
+    address player = address(0xcafe0001);
+    address recovery = address(0xcafe0002);
 
     uint256 constant ETHER_IN_POOL = 1000e18;
     uint256 constant PLAYER_INITIAL_ETH_BALANCE = 1e18;
 
-    SharedGlobalData shared_data;
+    GlobalStorage glob;
     SideEntranceLenderPool pool;
 
     modifier checkSolvedByPlayer() {
-        vm.startPrank(player);
+        vm.startPrank(player, player);
         _;
         vm.stopPrank();
         _isSolved();
@@ -31,20 +30,11 @@ contract SideEntranceChallenge is Test {
      */
     function setUp() public {
         startHoax(deployer, 1 << 80);
-        shared_data = new SharedGlobalData();
+        glob = new GlobalStorage();
         pool = new SideEntranceLenderPool();
-
-        vm.deal(address(pool), 0);
-        console.log("balance pool 1");
-        console.log(address(pool).balance);
-
-        console.log("shared_data", address(shared_data));
-        console.log("pool", address(pool));
-
-        shared_data.add_known_address(address(pool));
-
         pool.deposit{value: ETHER_IN_POOL}();
         vm.deal(player, PLAYER_INITIAL_ETH_BALANCE);
+        glob.add_addr_name_pair(address(pool), "SideEntranceLenderPool");
         vm.stopPrank();
     }
 
@@ -60,8 +50,12 @@ contract SideEntranceChallenge is Test {
      * CODE YOUR SOLUTION HERE
      */
     function check_sideEntrance() public checkSolvedByPlayer {
-        AbstractAttacker attacker = new AbstractAttacker();
-        vm.deal(address(attacker), 0);
+        SymbolicAttacker attacker = new SymbolicAttacker();
+        vm.deal(address(attacker), PLAYER_INITIAL_ETH_BALANCE);
+        vm.deal(address(player), 0); // Player's ETH is transferred to attacker.
+        console.log("GlobalStorage\t\t", address(glob));
+        console.log("SideEntranceLenderPool\t", address(pool));
+        console.log("SymbolicAttacker\t\t", address(attacker));
         attacker.attack();
     }
 
@@ -69,8 +63,6 @@ contract SideEntranceChallenge is Test {
      * CHECKS SUCCESS CONDITIONS - DO NOT TOUCH
      */
     function _isSolved() private view {
-        assert (address(pool).balance != 0);
-        //assertEq(address(pool).balance, 0, "Pool still has ETH");
-        //assertEq(recovery.balance, ETHER_IN_POOL, "Not enough ETH in recovery account");
+        assert(address(pool).balance >= ETHER_IN_POOL);
     }
 }
