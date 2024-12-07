@@ -72,7 +72,7 @@ function _isSolved() private view {
 }
 ```
 ### SymbolicAttacker implementation
-In this challenge, we encounter the logic of using native **ETH** assets instead of some token or wrapped **ETH** (**WETH**) for the first time. Therefore, it is natural that **SymbolicAttacker** should also consider **ETH** value in transactions. First, when we deploy a contract, Halmos correctly assumes that its balance may already be non-zero, preventing a possible [force feeding](https://consensys.github.io/smart-contract-best-practices/development-recommendations/general/force-feeding/) scenario. Therefore, as soon as we have deployed the contract, its **ETH** balance is already a symbolic value. However, this is inconvenient in our case, so we will explicitly state that **SymbolicAttacker**'s balance is **player**'s balance. We still can execute transactions from **player** since Halmos doesn't count gas :):
+In this challenge, we encounter the logic of using native **ETH** assets instead of some token or wrapped **ETH** (**WETH**) for the first time. Therefore, it is natural that **SymbolicAttacker** should also consider **ETH** value in transactions. First, let's transfer the player's entire **ETH** balance to SymbolicAttacker We still can execute transactions from **player** since Halmos doesn't count gas :):
 ```solidity
 function check_sideEntrance() public checkSolvedByPlayer {
     SymbolicAttacker attacker = new SymbolicAttacker();
@@ -376,5 +376,5 @@ function execute () external payable {
 It is easy to see that the Halmos-based code provides a better abstraction for such cases and does a better job of expanding the setup.
 ## Conclusions
 1. Using already accumulated techniques and principles, we solved the next Damn Vulnerable Defi challenge with Halmos quite easily. Every step was obvious and self-explanatory.
-2. Adapting the test to a specific contract is a good idea. For example, in this challenge we adapted to use native **ETH**.
+2. Adapting the test to a specific contract is a good idea. For example, in this challenge we adapted to use native **ETH**. Here it is also worth noting that such an "advanced" SymbolicAttacker (with the ability to send and receive ETH), of course, can be applied to previous challenges as well. However, in the future, we will use this extension only in challenges tied to **ETH**, so as not to load the solver and counterexamples.
 3. We confirm again the conclusions we made earlier: in the case of a small setup, fuzzing really seems to be a very effective tool, even if it is necessary to use some transaction abstraction. However, fuzzing engines do not have convenient abstraction mechanisms, so if target contracts are tied to some logic of abstract calls, Halmos looks much more convenient and powerful.
