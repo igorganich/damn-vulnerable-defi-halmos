@@ -667,3 +667,5 @@ Also not working. I think these results are enough to prove that Foundry and Ech
 3. When creating invariants, you can follow the principle "If we can do something UNEXPECTED - we will easily find a full-fledged attack".
 4. It is important to understand when it is better to use **svm.CreateCalldata()** and when to use **svm.createBytes()**. Each has its own unique areas of application.
 5. Even given that we gave a strong hint that **svm.createBytes()** should be used at **withdraw->_msgSender()** function, Halmos did a great job of handling the raw calldata to find a bug, unlike Echidna and Foundry. The new version of Naive-receiver is not completely solved by fuzzing.
+## What's next?
+Next DVD challenge is [Side-entrance](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/side-entrance).
