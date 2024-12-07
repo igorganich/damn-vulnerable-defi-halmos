@@ -315,6 +315,7 @@ if (msg.sender == address(0x44E97aF4418b7a17AABD8090bEA0A471a366305C)) // player
 //if (!MerkleProof.verify(inputClaim.proof, root, leaf)) revert InvalidProof();
 ...
 ```
+It is also worth saying that we are assuming here that the **MerkleProof** implementation is bug free and works as expected.
 ### Avoiding nested vm.startPrank()
 The current version of Halmos does not support nested `startPrank()`. So let's replace
 ```solidity
