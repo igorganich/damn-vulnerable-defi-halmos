@@ -338,7 +338,7 @@ Wow, it was really a long preparation. Let's move on to the next steps!
 ## No SymbolicAttacker? 
 There is a feature in this challenge that prevents us from using the convenient **SymbolicAttacker** proxy contract. Since the logic of **TheRewarderDistributor** contract is tied to the player's specific address, `msg.sender` in **TheRewarderDistributor** should be exactly the player's address. Instead, we'll move all of the **SymbolicAttacker** logic right into **TheRewarderChallenge** contract.
 ## Improvement of coverage
-Plannedly launch one symbolic transaction to check whether all paths are covered:
+According to the plan, launch one symbolic transaction to check whether all paths are covered:
 ```solidity
 function attack() private {
     execute_tx();
@@ -361,14 +361,14 @@ WARNING:halmos:check_theRewarder(): paths have not been fully explored due to th
 ### Increase the symbolic loops
 We have as many as 3 contracts stored in **GlobalStorage**, but Halmos runs 2 loop iterations by default. Let's add the parameter `--loop 3` to the Halmos command.
 ### Symbolic token index
-The old symbolic offset problem, but in a new form. This time we are trying to retrieve an IERC20 token by index, which is a symlobic value. and Halmos doesn't like it:
+The old symbolic offset problem, but in a new form. This time we are trying to retrieve an IERC20 token by index, which is a symbolic value. and Halmos doesn't like it:
 ```solidity
 function claimRewards(Claim[] memory inputClaims, IERC20[] memory inputTokens) external {
     ...
     if (token != inputTokens[inputClaim.tokenIndex]) {
 ...
 ```
-Since we do not have any restrictions on the size of the inputTokens array, literally any address can be found by the symbolic index. Therefore, we will get around this symbolic offset issue by using a **symbolic token** instead of `inputTokens[inputClaim.tokenIndex]` everywhere:
+Since we do not have any restrictions on the size of the `inputTokens` array, literally any address can be found by the symbolic index. Therefore, we will get around this symbolic offset issue by using a **symbolic token** instead of `inputTokens[inputClaim.tokenIndex]` everywhere:
 ```solidity
 function claimRewards(Claim[] memory inputClaims, IERC20[] memory inputTokens) external {
     ...
