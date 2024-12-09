@@ -397,7 +397,9 @@ function get_concrete_from_symbolic (address /*symbolic*/ addr) public view
     revert(); // Ignore cases when addr is not some concrete known address
 }
 ```
-Now, Halmos shows us that selectors. Let's analyze each counterexample one by one:
+Now, Halmos shows us that selectors. 
+## Counterexamples analysis
+Let's analyze each counterexample one by one:
 ```javascript
 Counterexample:
 halmos_selector_bytes4_1442fb7_18 = permit
