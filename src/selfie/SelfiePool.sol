@@ -7,12 +7,10 @@ import {IERC3156FlashLender} from "@openzeppelin/contracts/interfaces/IERC3156Fl
 import {IERC3156FlashBorrower} from "@openzeppelin/contracts/interfaces/IERC3156FlashBorrower.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {SimpleGovernance} from "./SimpleGovernance.sol";
-import "forge-std/Test.sol";
+import {Test, console} from "forge-std/Test.sol";
 
-contract SelfiePool is IERC3156FlashLender, ReentrancyGuard {
+contract SelfiePool is IERC3156FlashLender, ReentrancyGuard, Test {
     bytes32 private constant CALLBACK_SUCCESS = keccak256("ERC3156FlashBorrower.onFlashLoan");
-
-    bool anti_recursion = false;
 
     IERC20 public immutable token;
     SimpleGovernance public immutable governance;
@@ -55,16 +53,11 @@ contract SelfiePool is IERC3156FlashLender, ReentrancyGuard {
         nonReentrant
         returns (bool)
     {
-        console.log("flashloan");
-        if (anti_recursion == true)
-        {
-            revert();
-        }
-        anti_recursion = true;
+        vm.assume(address(_receiver) == address(0xaaaa0006));
         if (_token != address(token)) {
             revert UnsupportedCurrency();
         }
-        _receiver = IERC3156FlashBorrower(address(0x00000000000000000000000000000000000000000000000000000000aaaa0006));
+
         token.transfer(address(_receiver), _amount);
         if (_receiver.onFlashLoan(msg.sender, _token, _amount, 0, _data) != CALLBACK_SUCCESS) {
             revert CallbackFailed();
@@ -73,7 +66,6 @@ contract SelfiePool is IERC3156FlashLender, ReentrancyGuard {
         if (!token.transferFrom(address(_receiver), address(this), _amount)) {
             revert RepayFailed();
         }
-        anti_recursion = false;
         return true;
     }
 
