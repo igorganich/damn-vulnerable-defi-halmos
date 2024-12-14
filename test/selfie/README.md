@@ -14,7 +14,7 @@ since the main ideas here are largely repeated and we will not dwell on them aga
 ### Common prerequisites
 1. Copy **Selfie.t.sol** file to **SelfieHalmos.t.sol**.
 2. Rename `test_selfie()` to `check_selfie()`, so Halmos will execute this test symbolically.
-3. Avoid using **makeAddr()** cheatcode:
+3. Avoid using `makeAddr()` cheatcode:
     ```solidity
     address deployer = address(0xcafe0000);
     address player = address(0xcafe0001);
@@ -216,6 +216,8 @@ Counterexample:
 Killed
 ```
 If we do not take into account the fake [permit-transferFrom](https://github.com/igorganich/damn-vulnerable-defi-halmos/blob/master/test/truster/README.md#counterexamples-analysis) counterexample we are familiar with, then the solution is still not found. Moreover, it did not even complete due to Out-of-memory. It is necessary to optimize!
+### Small update
+As of this writing, this behavior of Halmos has been [fixed](https://github.com/a16z/halmos/issues/425). Now the memory does not grow linearly with the growth of paths number, so we at least can finish 2 character transactions in some time. However, a counterexample has still not been found, and such a test has been running for about 12 hours.
 ## Optimizations and heuristics
 We have already met with path explosion limits in [Naive-receiver](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/naive-receiver#optimizations). And we can already highlight several directions of optimizations and heuristics that can be applied to bypass this limitation:
 1. Add "solid" optimizations, which are known to have no effect on the result.
@@ -259,7 +261,7 @@ function get_concrete_from_symbolic_optimized (...)
 }
 ```
 ### Cut scenarios
-Let's try to cut down the scenarios in which we symbolically enter the same function several times. Now we can't enter the same function symbolically twice during the path. At the same time, the overall coverage of the code will not decrease, we will still go through all scenarios where these functions are entered once:
+Let's try to cut down the scenarios in which we symbolically enter the same function several times. Now we can't select the same function twice inside `get_concrete_from_symbolic` in the path. At the same time, the overall coverage of the code will not decrease, we will still go through all scenarios where these functions are entered once:
 ```solidity
 contract GlobalStorage is Test, SymTest {
     ...
@@ -310,7 +312,7 @@ function attack() public {
     execute_tx();*/
 }
 ```
-Yes, we have moved the `vm.warp()` from `attack()` to `onFlashLoan()` right in the middle of the transaction. Because we can! This is risky because it can cause **false positives**. We hope this will not happen. This is the price of optimization heuristics.
+Yes, we have moved the `vm.warp()` from `attack()` to `onFlashLoan()` right in the middle of the transaction. Because we can! It may be risky because it can cause **false positives**. We hope this will not happen. This is the price of optimization heuristics.
 ### Invariants
 Until now, we used only invariants that somehow followed from the initial conditions of the problem. I suggest this time to go a much more creative way and come up with any scenarios that seem unexpected, unnatural or buggy. Yes, let's do the work for the imaginary developers of these contracts and cover them with tests :D.
 
@@ -374,7 +376,7 @@ p_target_address_188b5bf_41 = 0x000000000000000000000000000000000000000000000000
 p_value_uint128_14d3e47_42 = 0x0000000000000000000000000000000000000000000000000000000000000000
 [FAIL] check_selfie() (paths: 7080, time: 948.98s, bounds: [])
 ```
-Cool! We reduced the number of paths to ~7000 and found a scenario where an **attacker** can register an **action**: We borrow tokens through `flashLoan`, `delegate` them to ourselves, register an **action**, return the loan. And actually, we haven't needed warp here yet. That's good.
+Cool! We reduced the number of paths to ~7000 and found a scenario where an **attacker** can register an **action**: We borrow tokens through `flashLoan`, `delegate` them to ourselves, register an **action**, return the loan. In addition, we have "unlocked" the path to `executeAction`! And actually, we haven't needed warp here yet. That's good. 
 
 But it is still not clear how to use this bug to empty the pool. Therefore, our journey continues.
 ## SymbolicAttacker preload
@@ -418,7 +420,7 @@ function preload(SelfiePool pool, DamnValuableVotes token) public {
 }
 ...
 ```
-We do not forget to remove assert for the constancy of _actionCounter, otherwise every path will be a counterexample:
+We do not forget to remove assert for the constancy of `_actionCounter`, otherwise every path will be a counterexample:
 ```solidity
 function _isSolved() private view {
     ...
@@ -427,6 +429,7 @@ function _isSolved() private view {
 }
 ```
 Since we unlocked the `executeAction` function, let's start again with one symbolic transaction. Will see if that's enough.
+
 Run:
 ```javascript
 $ halmos --solver-timeout-assertion 0 --function check_selfie --loop 3
@@ -544,7 +547,7 @@ in DVD V3 and V4, the very essence of the challenge remained the same, with the 
 3. Logic via `snapshot` is used instead of `ERC20Votes::delegate`.
 
 ### Idea overview
-To describe the idea briefly: we have a "monstrous" [push-use](https://github.com/igorganich/damn-vulnerable-defi-halmos/blob/master/test/the-rewarder/README.md#analysis-of-the-limits-of-echidna) pattern, where almost all functions that can be called by an attacker are described directly in the code without any abstractions. The first few calls are to "setup" the functions that will then be called by the attacking transaction.
+To describe the idea briefly: we have a "monstrous" [push-use](https://github.com/igorganich/damn-vulnerable-defi-halmos/blob/master/test/the-rewarder/README.md#analysis-of-the-limits-of-echidna) pattern, where a small number of functions that can be called by an attacker are described directly in the code without any abstractions. The first few calls are to "setup" the functions that will then be called by the attacking transaction.
 ### Reduced number of scenarios
 As with Halmos solution, the Echidna-based solution has reduced the number of covered scenarios. But there is a key important difference: basically, they only consider these target functions:
 ```solidity
@@ -656,7 +659,7 @@ function createPayload(
     ++payloadsPushedCounter;
 }
 ```
-A bit like our Frankenstein from [Truster](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/truster#echidna), isn't it? Again, I draw your attention to the fact that only 2 functions that can be launched inside executeAction are considered here, and the function is already so huge. And the parameters of these functions are not abstract, but hardened. Against this background, the usability of Halmos is obvious.
+A bit like our Frankenstein from [Truster](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/truster#echidna), isn't it? Again, I draw your attention to the fact that only 2 functions that can be launched inside `executeAction` are considered here, and the function is already so huge. And the parameters of these functions are not abstract, but hardened. Against this background, the usability of Halmos is obvious.
 ### Call actions
 After the setup is complete, the fuzzer has the ability to run all these functions. 
 `receiveTokens` has functionality for this:
@@ -771,6 +774,39 @@ function executeAction() public {
     ++payloadsExecutedCounter;
 }
 ```
+Running the `flashLoan` and `executeAction` happen here:
+```solidity
+...
+function flashLoan() public {
+    // borrow max amount of tokens
+    uint256 borrowAmount = token.balanceOf(address(pool));
+    pool.flashLoan(borrowAmount);
+}
+...
+function executeAction() public {
+    // get the first unexecuted actionId
+    uint256 actionId = actionIds[actionIdCounter];
+    // increase action Id counter
+    actionIdCounter = actionIdCounter + 1;
+    // get data related to the action to be executed
+    (, , uint256 weiAmount, uint256 proposedAt, ) = governance.actions(
+        actionId
+    );
+    require(
+        address(this).balance >= weiAmount,
+        "Not sufficient account balance to execute the action"
+    );
+    require(
+        block.timestamp >= proposedAt + ACTION_DELAY_IN_SECONDS,
+        "Time for action execution has not passed yet"
+    );
+    // Action
+    governance.executeAction{value: weiAmount}(actionId);
+    // increase counter of payloads executed
+    ++payloadsExecutedCounter;
+}
+```
+
 As a result, Echidna must find such a set of setup functions in which the invariant is broken when the attack is launched.
 
 I missed some details, but I would recommend you read the full solution by yourself.
