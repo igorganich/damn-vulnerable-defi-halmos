@@ -48,6 +48,29 @@ contract SelfiePool is IERC3156FlashLender, ReentrancyGuard, Test {
         return 0;
     }
 
+    // save original flashLoan
+    /*function flashLoan(IERC3156FlashBorrower _receiver, address _token, uint256 _amount, bytes calldata _data)
+        external
+        nonReentrant
+        returns (bool)
+    {
+        if (_token != address(token)) {
+            revert UnsupportedCurrency();
+        }
+
+        token.transfer(address(_receiver), _amount);
+        if (_receiver.onFlashLoan(msg.sender, _token, _amount, 0, _data) != CALLBACK_SUCCESS) {
+            revert CallbackFailed();
+        }
+
+        if (!token.transferFrom(address(_receiver), address(this), _amount)) {
+            revert RepayFailed();
+        }
+        return true;
+    }*/
+
+    // symbolic version
+
     function flashLoan(IERC3156FlashBorrower _receiver, address _token, uint256 _amount, bytes calldata _data)
         external
         nonReentrant

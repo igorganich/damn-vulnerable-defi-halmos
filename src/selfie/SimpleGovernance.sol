@@ -7,13 +7,13 @@ import {ISimpleGovernance} from "./ISimpleGovernance.sol";
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {Test, console} from "forge-std/Test.sol";
 
-contract SimpleGovernance is ISimpleGovernance {
+contract SimpleGovernance is ISimpleGovernance, Test {
     using Address for address;
 
     uint256 private constant ACTION_DELAY_IN_SECONDS = 2 days;
 
-    DamnValuableVotes private _votingToken;
-    uint256 private _actionCounter;
+    DamnValuableVotes public _votingToken;
+    uint256 public _actionCounter;
     mapping(uint256 => GovernanceAction) private _actions;
 
     constructor(DamnValuableVotes votingToken) {
@@ -51,17 +51,35 @@ contract SimpleGovernance is ISimpleGovernance {
         emit ActionQueued(actionId, msg.sender);
     }
 
+    // save original function
+    /*
     function executeAction(uint256 actionId) external payable returns (bytes memory) {
         if (!_canBeExecuted(actionId)) {
             revert CannotExecute(actionId);
         }
-        console.log("2");
 
         GovernanceAction storage actionToExecute = _actions[actionId];
         actionToExecute.executedAt = uint64(block.timestamp);
 
         emit ActionExecuted(actionId, msg.sender);
 
+        return actionToExecute.target.functionCallWithValue(actionToExecute.data, actionToExecute.value);
+    }*/
+
+    // symbolic version
+    
+    function executeAction(uint256 actionId) external payable returns (bytes memory) {
+        vm.assume(actionId == 1);
+        if (!_canBeExecuted(actionId)) {
+            revert CannotExecute(actionId);
+        }
+
+        GovernanceAction storage actionToExecute = _actions[actionId];
+        actionToExecute.executedAt = uint64(block.timestamp);
+
+        emit ActionExecuted(actionId, msg.sender);
+
+        vm.assume(actionToExecute.target != address(0xaaaa0006));
         return actionToExecute.target.functionCallWithValue(actionToExecute.data, actionToExecute.value);
     }
 
@@ -95,7 +113,6 @@ contract SimpleGovernance is ISimpleGovernance {
         unchecked {
             timeDelta = uint64(block.timestamp) - actionToExecute.proposedAt;
         }
-        console.log("1");
 
         return actionToExecute.executedAt == 0 && timeDelta >= ACTION_DELAY_IN_SECONDS;
     }

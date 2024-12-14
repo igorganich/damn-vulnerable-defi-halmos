@@ -8,8 +8,9 @@ import {SimpleGovernance} from "../../src/selfie/SimpleGovernance.sol";
 import {SelfiePool} from "../../src/selfie/SelfiePool.sol";
 import "lib/GlobalStorage.sol";
 import "./SymbolicAttacker.sol";
+import "halmos-cheatcodes/SymTest.sol";
 
-contract SelfieChallenge is Test {
+contract SelfieChallenge is Test, SymTest {
     address deployer = address(0xcafe0000);
     address player = address(0xcafe0001);
     address recovery = address(0xcafe0002);
@@ -77,6 +78,9 @@ contract SelfieChallenge is Test {
         console.log("governance\t", address(governance));
         console.log("pool\t\t", address(pool));
         console.log("attacker\t\t", address(attacker));
+        attacker.preload(pool, token);
+        uint256 warp = svm.createUint256("preattack_warp");
+        vm.warp(block.timestamp + warp); // wait for symbolic time between transactions
         attacker.attack();
     }
 
@@ -85,5 +89,16 @@ contract SelfieChallenge is Test {
      */
     function _isSolved() private view {
         assert (token.balanceOf(address(pool)) >= TOKENS_IN_POOL);
+
+        // Check allowance changes
+        address symbolicSpender = svm.createAddress("symbolicSpender");
+        assert (token.allowance(address(pool), symbolicSpender) == 0);
+        assert (token.allowance(address(governance), symbolicSpender) == 0);
+
+        // Check if governance's _votingToken may be changed
+        assert (governance._votingToken() == token);
+
+        // Check number of registered actions
+        //assert (governance._actionCounter() == 1);
     }
 }
