@@ -727,12 +727,6 @@ function callbackTransferFrom() internal {
     transferFrom(_amount);
 }
 ...
-function pushTransferFromToCallback(uint256 _amount) external {
-    require(_amount > 0, "Cannot transfer zero tokens");
-    _transferAmountInCallback.push(_amount);
-    callbackActionsToBeCalled.push(uint256(CallbackActions.transferFrom));
-}
-...
 function callQueueAction() internal {
     // cache the current value of counter of already queued actions
     uint256 counter = payloadsQueuedCounter;
