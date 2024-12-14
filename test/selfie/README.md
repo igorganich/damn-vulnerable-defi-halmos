@@ -217,7 +217,7 @@ Killed
 ```
 If we do not take into account the fake [permit-transferFrom](https://github.com/igorganich/damn-vulnerable-defi-halmos/blob/master/test/truster/README.md#counterexamples-analysis) counterexample we are familiar with, then the solution is still not found. Moreover, it did not even complete due to Out-of-memory. It is necessary to optimize!
 ### Small update
-As of this writing, this behavior of Halmos has been [fixed](https://github.com/a16z/halmos/issues/425). Now the memory does not grow linearly with the growth of paths number, so we at least can finish 2 character transactions in some time. However, a counterexample has still not been found, and such a test has been running for about 12 hours.
+As of this writing, this behavior of Halmos has been [fixed](https://github.com/a16z/halmos/issues/425). Now the memory does not grow linearly with the growth of paths number, so we at least can finish 2 symbolic transactions in some time. However, a counterexample has still not been found, and such a test has been running for about 12 hours.
 ## Optimizations and heuristics
 We have already met with path explosion limits in [Naive-receiver](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/naive-receiver#optimizations). And we can already highlight several directions of optimizations and heuristics that can be applied to bypass this limitation:
 1. Add "solid" optimizations, which are known to have no effect on the result.
