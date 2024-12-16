@@ -20,8 +20,10 @@ For reasons of ease of presentation of new material, new techniques, etc., the o
 2. [Truster](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/truster)
 3. [Naive-receiver](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/naive-receiver)
 4. [Side-entrance](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/side-entrance)
-5. TBD
-6. ...
+5. [The-rewarder](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/the-rewarder)
+6. [Selfie](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/selfie)
+7. TBD
+8. ...
 
 # Contributions
 Don't be afraid to make pull requests if you have any improvement ideas.
