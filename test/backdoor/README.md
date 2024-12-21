@@ -821,3 +821,4 @@ I missed some details, but I would recommend you read the full solution by yours
 2. You can expand the number of symbolic transactions not only in the **SymbolicAttacker** entry point, but also in symbolic callbacks. This may save us resources.
 3. If we are looking for an attack - sometimes you can find a bug by not looking for a direct counterexample, but simply by finding **SOMETHING UNEXPECTED**. It is not possible to come up with some clear algorithm here, only it is possible to advise the studying of the business logic of the contract and make new invariants based on this.
 4. The comparison of fuzzing and symbolic analysis approaches based on this challenge has most clearly shown the advantage of Halmos when testing contracts with a high level of logic abstraction. The fuzzing preparation looks like a big overengineering, while the symbolic execution preparation is certainly not as easy as we're used to, but still pretty straightforward.
+ 
