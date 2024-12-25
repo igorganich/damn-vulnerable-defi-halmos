@@ -10,7 +10,7 @@ import {WalletRegistry} from "../../src/backdoor/WalletRegistry.sol";
 import "lib/GlobalStorage.sol";
 import "./SymbolicAttacker.sol";
 
-contract BackdoorChallenge is Test {
+contract BackdoorChallenge is Test, SymTest {
     address deployer = address(0xcafe0000);
     address player = address(0xcafe0001);
     address recovery = address(0xcafe0002);
@@ -50,7 +50,7 @@ contract BackdoorChallenge is Test {
         // Transfer tokens to be distributed to the registry
         token.transfer(address(walletRegistry), AMOUNT_TOKENS_DISTRIBUTED);
 
-        glob.add_addr_name_pair(address(singletonCopy), "Safe");
+        //glob.add_addr_name_pair(address(singletonCopy), "Safe");
         glob.add_addr_name_pair(address(walletFactory), "SafeProxyFactory");
         glob.add_addr_name_pair(address(token), "DamnValuableToken");
         glob.add_addr_name_pair(address(walletRegistry), "WalletRegistry");
@@ -98,6 +98,8 @@ contract BackdoorChallenge is Test {
 
             if (wallet != address(0)) {
                 assert(token.balanceOf(wallet) >= 10e18);
+                address symbolic_spender = svm.createAddress("symbolic_spender");
+                assert(token.allowance(wallet, symbolic_spender) == 0);
             }
         }
     }

@@ -1,6 +1,6 @@
 # Halmos vs Backdoor
 ## Halmos version
-halmos 0.2.3.dev4+g0ef9341 was used in this article
+halmos 0.2.4.dev6+g606ac51
 ## Foreword
 It is strongly assumed that the reader is familiar with the previous articles on solving 
 1. [Unstoppable](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/unstoppable) 
@@ -85,7 +85,7 @@ function _isSolved() private view {
     assertEq(token.balanceOf(recovery), AMOUNT_TOKENS_DISTRIBUTED);
 }
 ```
-At first, you might think that, by analogy with the previous challenges, we will look for a scenario where we empty the `walletRegistry`. But, in fact, this is valid behavior. It should distribute his tokens to users as a reward. Instead, we will check if we can empty the balance of the created wallets:
+At first, you might think that, by analogy with the previous challenges, we will look for a scenario where we empty the `walletRegistry`. But, in fact, this is valid behavior. It should distribute its tokens to users as a reward. Instead, we will check if we can empty the balance of the created wallets:
 ```solidity
 function _isSolved() private view {
     for (uint256 i = 0; i < users.length; i++) {
@@ -97,167 +97,505 @@ function _isSolved() private view {
     }
 }
 ```
+And, taking into account the conclusions from selfie(ADD LINK), we will add another rather obvious invariant on `allowance`:
+```solidity
+...
+address symbolic_spender = svm.createAddress("symbolic_spender");
+assert(token.allowance(wallet, symbolic_spender) == 0);
+...
+```
 ## Improvement of coverage
-We start with a traditional 1 symbolic transaction:
-```solidity
-function attack() public {
-    execute_tx();
-    //execute_tx();
+### create2 during test
+In this challenge, we have a unique feature: the logic of the test is based on the fact that new contracts will be created during the test, which means that we need to add new contracts to **GlobalStorage** where they are created:
+```soliidty
+function deployProxy(address _singleton, bytes memory initializer, bytes32 salt) internal returns (SafeProxy proxy) {
+...
+assembly {
+    proxy := create2(0x0, add(0x20, deploymentData), mload(deploymentData), salt)
 }
-```
-```javascript
-$ halmos --solver-timeout-assertion 0 --function check_backdoor --loop 4 -vvvvv
-```
-
-
-
-
-
-## Improvement of coverage
-Let's run one symbolic transaction and carefully see if we can increase code coverage with trivial methods:
-```solidity
-function attack() public {
-    execute_tx();
-    //execute_tx();
-}
-```
-```javascript
-$ halmos --solver-timeout-assertion 0 --function check_selfie --loop 3 -vvvvv
-```
-Among all reverted paths, we can highlight several that we can bypass in an obvious way.
-### onFlashLoan
-Consider these several paths:
-```javascript
-Path #67:
+require(address(proxy) != address(0), "Create2 call failed");
+glob.add_addr_name_pair(address(proxy), "SafeProxy");
 ...
-    CALL 0xaaaa0005::flashLoan(...)
-    ...
-        CALL SimpleGovernance::onFlashLoan(...)
-        ↩ REVERT 0x (error: Revert()) 
 ```
+Note that Halmos completely ignores the logic with `salt` when working with `create2` and creates new contracts with addresses `0xbbbb****`. 
+This is, in fact, convenient for us, because it turns out not a symbolic address, but a specific one.
+### delegatecall
+For the first time, we meet with the target-call pattern, but at the same time we do not make `call` but `delegatecall`:
 ```javascript
-Path #68:
+Path #22:
 ...
-    CALL 0xaaaa0005::flashLoan(...)
-    ...
-        CALL 0xaaaa0003::onFlashLoan(...)
-        ↩ REVERT 0x (error: Revert()) 
-```
-```javascript
-Path #72:
+            CALL Safe::simulateAndRevert(Concat(p_targetContract_address_76fe5e4_49(), 0x0000000000000000000000000000000000000000000000000000000000000040, p_calldataPayload_length_ea68c34_51(), p_calldataPayload_bytes_7c96bce_50()))
+                DELEGATECALL Safe::Extract(p_calldataPayload_bytes_7c96bce_50())(Extract(p_calldataPayload_bytes_7c96bce_50()))
+                ↩ CALLDATALOAD 0x (error: NotConcreteError('symbolic CALLDATALOAD offset: 4 + Extract(7903, 7648, p_calldataPayload_bytes_7c96bce_50)'))
 ...
-    CALL 0xaaaa0005::flashLoan(...)
-    ...
-        CALL GlobalStorage::onFlashLoan(...)
-        ↩ REVERT 0x (error: Revert()) 
 ```
 ```solidity
-function flashLoan(IERC3156FlashBorrower _receiver, address _token, uint256 _amount, bytes calldata _data)
-    external
-    nonReentrant
-    returns (bool)
-{
-    ...
-    if (_receiver.onFlashLoan(msg.sender, _token, _amount, 0, _data) != CALLBACK_SUCCESS) {
-        revert CallbackFailed();
+/**
+ * @dev Performs a delegatecall on a targetContract in the context of self.
+ * Internally reverts execution to avoid side effects (making it static).
+ *
+ * This method reverts with data equal to `abi.encode(bool(success), bytes(response))`.
+ * Specifically, the `returndata` after a call to this method will be:
+ * `success:bool || response.length:uint256 || response:bytes`.
+ *
+ * @param targetContract Address of the contract containing the code to execute.
+ * @param calldataPayload Calldata that should be sent to the target contract (encoded method name and arguments).
+ */
+function simulateAndRevert(address targetContract, bytes memory calldataPayload) external {
+    // solhint-disable-next-line no-inline-assembly
+    assembly {
+        let success := delegatecall(gas(), targetContract, add(calldataPayload, 0x20), mload(calldataPayload), 0, 0)
+
+        mstore(0x00, success)
+        mstore(0x20, returndatasize())
+        returndatacopy(0x40, 0, returndatasize())
+        revert(0, add(returndatasize(), 0x40))
     }
-    ...
-}    
+}
 ```
-Here's what's going on: in `selfiePool::flashLoan()` we pass `_receiver` as a parameter. As we execute the transaction symbolically, Halmos starts brute-forcing all addresses known to it as a `_receiver`, trying to execute the `onFlashLoan()` function from each contract. We saw something similar in [Naive-receiver](https://github.com/igorganich/damn-vulnerable-defi-halmos/blob/master/test/naive-receiver/README.md#optimizations). However, this time, we do not have a ready-made **IERC3156FlashBorrower** contract in the setup, so at the moment all `flashLoan` transactions are doomed to **revert**. But it's not scary, it's obvious that we can make such a callback inside our **SymbolicAttacker**, as we did in [Side-entrance](https://github.com/igorganich/damn-vulnerable-defi-halmos/blob/master/test/side-entrance/README.md#callbacks):
+We will handle the `delegatecall` of a symbolic target quite simply: цe will specify our **SymbolicAttacker** as the only target, and the only function should be some `handle_delegatecall()` callback, in which we will symbolically iterate through the functions using the familiar method:
 ```solidity
-function onFlashLoan(address initiator, address token,
-                    uint256 amount, uint256 fee,
-                    bytes calldata data
-) external returns (bytes32) 
-{
-    address target = svm.createAddress("target_onFlashLoan");
-    bytes memory data;
+bool delegatecall_reent_guard = false;
+
+function handle_delegatecall() public {
+    if (delegatecall_reent_guard) {
+        revert();
+    }
+    delegatecall_reent_guard = true;
+    execute_tx("handle_delegatecall_target");
+    delegatecall_reent_guard = false;
+}
+```
+```solidity
+...
+function simulateAndRevert(address targetContract, bytes memory calldataPayload) external {
+    vm.assume(targetContract == address(0xaaaa0007));
+    vm.assume(bytes4(calldataPayload) == bytes4(keccak256("handle_delegatecall()")));
+    ...
+}
+```
+There are several more such places with `delegatecall` crash:
+```javascript
+Path #185:
+...
+            CALL SafeProxyFactory::createProxyWithNonce(...)
+            ...
+                CALL SafeProxy::Extract(p_initializer_bytes_56179b1_14())(Extract(p_initializer_bytes_56179b1_14()))
+                    DELEGATECALL SafeProxy::Extract(p_initializer_bytes_56179b1_14())(Extract(p_initializer_bytes_56179b1_14()))
+                    ↩ CALLDATALOAD 0x ((error: NotConcreteError('symbolic CALLDATALOAD offset: 4 + Extract(7903, 7648, p_initializer_bytes_56179b1_14)'))
+```
+```solidity
+function deployProxy(...) {
+    ...
+    if (initializer.length > 0) {
+        // solhint-disable-next-line no-inline-assembly
+        assembly {
+            if eq(call(gas(), proxy, 0, add(initializer, 0x20), mload(initializer), 0, 0), 0) {
+                revert(0, 0)
+            }
+        }
+    }
+}
+```
+I know, from these logs it is not at all clear what happened. But it is enough to look at the implementation of **SafeProxy** and everything will become clear:
+```solidity
+contract SafeProxy {
+    // Singleton always needs to be first declared variable, to ensure that it is at the same location in the contracts to which calls are delegated.
+    // To reduce deployment costs this variable is internal and needs to be retrieved via `getStorageAt`
+    address internal singleton;
+
+    /**
+     * @notice Constructor function sets address of singleton contract.
+     * @param _singleton Singleton address.
+     */
+    constructor(address _singleton) {
+        require(_singleton != address(0), "Invalid singleton address provided");
+        singleton = _singleton;
+    }
+
+    /// @dev Fallback function forwards all transactions and returns all received return data.
+    fallback() external payable {
+        // solhint-disable-next-line no-inline-assembly
+        assembly {
+            let _singleton := and(sload(0), 0xffffffffffffffffffffffffffffffffffffffff)
+            // 0xa619486e == keccak("masterCopy()"). The value is right padded to 32-bytes with 0s
+            if eq(calldataload(0), 0xa619486e00000000000000000000000000000000000000000000000000000000) {
+                mstore(0, _singleton)
+                return(0, 0x20)
+            }
+            calldatacopy(0, 0, calldatasize())
+            let success := delegatecall(gas(), _singleton, 0, calldatasize(), 0, 0)
+            returndatacopy(0, 0, returndatasize())
+            if eq(success, 0) {
+                revert(0, returndatasize())
+            }
+            return(0, returndatasize())
+        }
+    }
+}
+```
+Halmos automatically performs `fallback()` (which is the only function of this contract). And inside it is this `delegatecall`. Before fixing this error, let's talk about how this feature works in general at the moment in the context of Halmos. 
+
+This contract is written in such a way that it is convenient to use any function from **Safe** while calling **safeProxy**.  And since Halmos handles the case when the function we're trying to reach from the `proxy` doesn't exist in the `singleton`, it can call a `fallback` again. So we have to add protection against recursion.
+
+Next, since the `singleton` address is transmitted in a symbolic manner when creating a `proxy`, we work with some symbolic `singleton`.
+
+We need to fix the error that occurs when using the target-call pattern, while not damaging the main logic of this `proxy`. It's hard to think of anything better than just adding another `symbolic_fallback` function that will handle this specific case that throws this error:
+```solidity
+function symbolic_fallback() external payable {
+    if (reent_guard) {
+        revert();
+    }
+    reent_guard = true;
+    address singleton_address;
+    bytes memory initializer_data;
+    (singleton_address, initializer_data) = glob.get_concrete_from_symbolic_optimized(singleton);
+    (bool success,bytes memory returndata) = singleton_address.delegatecall(initializer_data);
+    reent_guard = false;
+    if (!success) {
+        // Revert with the returned data
+        assembly {
+            revert(add(returndata, 0x20), mload(returndata))
+        }
+    }
+
+    // Return with the returned data
+    assembly {
+        return(add(returndata, 0x20), mload(returndata))
+    }
+}
+
+fallback() external payable {
+        // Check for mastercopy() call
+        if (msg.sig == bytes4(keccak256("mastercopy()"))) {
+            assembly {
+                mstore(0x00, sload(singleton.slot))
+                return(0x00, 32)
+            }
+        } else {
+            _delegateCall();
+        }
+    }
+
+    function _delegateCall() internal {
+        (bool success, bytes memory returndata) = singleton.delegatecall(msg.data);
+        if (!success) {
+            // Revert with the returned data
+            assembly {
+                revert(add(returndata, 0x20), mload(returndata))
+            }
+        }
+
+        // Return with the returned data
+        assembly {
+            return(add(returndata, 0x20), mload(returndata))
+        }
+    }
+```
+```solidity
+function deployProxy(...) {
+    ...
+    if (initializer.length > 0) {
+        // solhint-disable-next-line no-inline-assembly
+        /*assembly {
+            if eq(call(gas(), proxy, 0, add(initializer, 0x20), mload(initializer), 0, 0), 0) {
+                revert(0, 0)
+            }
+        }*/
+        proxy.symbolic_fallback();
+    }
+}
+```
+
+And one more place with `delegatecall`:
+```solidity
+abstract contract Executor {
+...
+    function execute(
+        address to,
+        uint256 value,
+        bytes memory data,
+        Enum.Operation operation,
+        uint256 txGas
+    ) internal returns (bool success) {
+        if (operation == Enum.Operation.DelegateCall) {
+            // solhint-disable-next-line no-inline-assembly
+            assembly {
+                success := delegatecall(txGas, to, add(data, 0x20), mload(data), 0, 0)
+            }
+        } else {
+            // solhint-disable-next-line no-inline-assembly
+            assembly {
+                success := call(txGas, to, value, add(data, 0x20), mload(data), 0, 0)
+            }
+        }
+    }
+...
+}
+```
+Even though this place doesn't throw a **revert**, it's still better to use `delegatecall_handler` than iterating through Halmos automatically to make it more generic.
+```solidity
+if (operation == Enum.Operation.DelegateCall) {
+    // solhint-disable-next-line no-inline-assembly
+    vm.assume(to == address(0xaaaa0007));
+    vm.assume(bytes4(data) == bytes4(keccak256("handle_delegatecall()")));
+    ...
+```
+### Regular symbolic memory offset
+There is also the usual `call` by symbolic calldata:
+```solidity
+function execute(
+        address to,
+        uint256 value,
+        bytes memory data,
+        Enum.Operation operation,
+        uint256 txGas
+    ) internal returns (bool success) {
+...
+   else {
+        // solhint-disable-next-line no-inline-assembly
+        assembly {
+            success := call(txGas, to, value, add(data, 0x20), mload(data), 0, 0)
+        }
+    }
+}
+```
+We deal with it as usual:
+```solidity
+...
+} else {
+   address target = svm.createAddress("execute_target");
+    bytes memory mydata;
     //Get some concrete target-name pair
-    (target, data) = glob.get_concrete_from_symbolic(target);
-    target.call(data);
+    (target, mydata) = glob.get_concrete_from_symbolic_optimized(target);
+    target.call(mydata);
+    
+    /*assembly {
+        success := call(txGas, to, value, add(data, 0x20), mload(data), 0, 0)
+    }*/
 }
+...
 ```
-Plus, take into account that this `flashLoan` needs to be returned "honestly" this time. And should return a valid string:
-```solidity
-function flashLoan(...)
-{
-    ...
-    if (!token.transferFrom(address(_receiver), address(this), _amount)) {
-        revert RepayFailed();
-    }
-    ...
-}
-```
-So, **SymbolicAttacker**:
-```solidity
-function onFlashLoan(...)
-{
-    ...
-    DamnValuableVotes(token).approve(address(msg.sender), 2**256 - 1);
-    return (keccak256("ERC3156FlashBorrower.onFlashLoan"));
-}
-```
-And, indeed, we help the solver by assuming that the only `_receiver` can only be **SymbolicAttacker**:
-```solidity
-function flashLoan(...)
-{
-    vm.assume(address(_receiver) == address(0xaaaa0006));
-    ...
-}
-```
-### executeAction
-The next revert that deserves our attention is this:
+### OwnerIsNotABeneficiary issue
+Let's try running the test now:
 ```javascript
-Path #46:
+$ halmos --solver-timeout-assertion 0 --function check_backdoor --loop 100
 ...
-    CALL SimpleGovernance::executeAction(p_actionId_uint256_74c7dee_04())
-    ↩ REVERT Concat(CannotExecute, p_actionId_uint256_74c7dee_04()) (error: Revert())
+CALL SafeProxyFactory::createProxyWithCallback(...)
+...
+    CALL SafeProxy::symbolic_fallback(...)
+    ...
+        DELEGATECALL SafeProxy::setup(...)
+    ...
+    CALL  0xaaaa0006::proxyCreated(...)
+    ...
+        REVERT OwnerIsNotABeneficiary ((error: Revert())
     ...
 ```
+This revert happens after we made a valid `call` to `createProxyWithCallback`, `setup` was executed, but for some reason Halmos cannot understand that the `owner` we passed in the setup process can be some valid `owner`:
 ```solidity
-function executeAction(uint256 actionId) external payable returns (bytes memory) {
-    if (!_canBeExecuted(actionId)) {
-        revert CannotExecute(actionId);
-    }
+function createProxyWithCallback(...) {
+    uint256 saltNonceWithCallback = uint256(keccak256(abi.encodePacked(saltNonce, callback)));
+    proxy = createProxyWithNonce(_singleton, initializer, saltNonceWithCallback);
+    if (address(callback) != address(0)) callback.proxyCreated(proxy, _singleton, initializer, saltNonce);
+}
+```
+```solidity
+function setup(
+    address[] calldata _owners,
+    uint256 _threshold,
+...
+) {
+    setupOwners(_owners, _threshold);// owners setup is happening here
     ...
 }
-...
-function _canBeExecuted(uint256 actionId) private view returns (bool) {
-    GovernanceAction memory actionToExecute = _actions[actionId];
+```
+```solidity
+function proxyCreated(SafeProxy proxy, address singleton, bytes calldata initializer, uint256) external override {
+    ...
+    if (owners.length != EXPECTED_OWNERS_COUNT) { // 1 is expected count
+        revert InvalidOwnersCount(owners.length);
+    }
 
-    if (actionToExecute.proposedAt == 0) return false;
-
-    uint64 timeDelta;
+    // Ensure the owner is a registered beneficiary
+    address walletOwner;
     unchecked {
-        timeDelta = uint64(block.timestamp) - actionToExecute.proposedAt;
+        walletOwner = owners[0];
     }
-
-    return actionToExecute.executedAt == 0 && timeDelta >= ACTION_DELAY_IN_SECONDS;
+    if (!beneficiaries[walletOwner]) {
+        revert OwnerIsNotABeneficiary();
+    }
+    ...
+```
+At least, it sees a scenario where there is only one `owner`. Let's print this `owner`, see why Halmos doesn't see that owner can be valid:
+```solidity
+...
+console.log("walletOwner is");
+console.log(walletOwner);
+if (!beneficiaries[walletOwner]) {
+    revert OwnerIsNotABeneficiary();
 }
 ```
-This revert is here because we never had any **action** registered. Since we could not symbolically enter here during 1 transaction, we assume that at least 2 are necessary: the first one registers the **action**, the second executes it. We also pay attention to the use of `block.timestamp`. This is a clear indication that some time should pass between transactions. We can't cover this code directly at this point, as we don't know the way to register an **action**. But we know for sure that one symbolic transaction will not be enough for us.
-
-So our **SymbolicAttacker** becomes extended:
+```javascript
+$ halmos --solver-timeout-assertion 0 --function check_backdoor --loop 100
+...
+[console.log] walletOwner is
+[console.log] 0x0000000000000000000000000000000000000000000000000000000000000000
+...
+```
+What? `0x0`? Why not symbolic? To answer this question, you need to understand how this algorithm stores and then reads the list of `owners`:
 ```solidity
-function attack() public {
-    execute_tx();
-    uint256 warp = svm.createUint256("warp");
-    vm.warp(block.timestamp + warp); // wait for symbolic time between transactions
-    execute_tx();
+...
+address internal constant SENTINEL_OWNERS = address(0x1);
+mapping(address => address) internal owners;
+    ...
+function setupOwners(address[] memory _owners, uint256 _threshold) internal {
+    // Threshold can only be 0 at initialization.
+    // Check ensures that setup function can only be called once.
+    require(threshold == 0, "GS200");
+    // Validate that threshold is smaller than number of added owners.
+    require(_threshold <= _owners.length, "GS201");
+    // There has to be at least one Safe owner.
+    require(_threshold >= 1, "GS202");
+    // Initializing Safe owners.
+    address currentOwner = SENTINEL_OWNERS;
+    for (uint256 i = 0; i < _owners.length; i++) {
+        // Owner address cannot be null.
+        address owner = _owners[i];
+        require(owner != address(0) && owner != SENTINEL_OWNERS && owner != address(this) && currentOwner != owner, "GS203");
+        // No duplicate owners allowed.
+        require(owners[owner] == address(0), "GS204");
+        owners[currentOwner] = owner;
+        currentOwner = owner;
+    }
+    owners[currentOwner] = SENTINEL_OWNERS;
+    ownerCount = _owners.length;
+    threshold = _threshold;
+}
+...
+function getOwners() public view returns (address[] memory) {
+    address[] memory array = new address[](ownerCount);
+
+    // populate return array
+    uint256 index = 0;
+    address currentOwner = owners[SENTINEL_OWNERS];
+    while (currentOwner != SENTINEL_OWNERS) {
+        array[index] = currentOwner;
+        currentOwner = owners[currentOwner];
+        index++;
+    }
+    return array;
+}
+```
+Some clever algorithm is used, which allows you to store owners' addresses in the mapping, and then craft an array based on it. The problem is that Halmos does not handle cases when the mapping index is some symbolic value:
+```solidity
+owners[currentOwner] = owner;
+...
+owners[currentOwner] = SENTINEL_OWNERS;
+```
+It is, in fact, difficult to catch or even understand that something is wrong. 
+
+Okay, let's fix it somehow. For this particular case, I propose to abandon this algorithm through mapping, and use a regular array, assuming that there are no more than 2 owners (the largest size of a dynamic array considered by Halmos according to the standard):
+```solidity
+...
+mapping(address => address) internal owners;
+address[2] array_owners;
+...
+function setupOwners(address[] memory _owners, uint256 _threshold) internal {
+    ...
+    for (uint256 i = 0; i < _owners.length; i++) {
+        ...
+        owners[i] = _owners[i];
+    }
+    ...
+}
+...
+function getOwners() public view returns (address[] memory) {
+    address[] memory array = new address[](ownerCount);
+    for (uint256 i = 0; i < ownerCount; i++)  {
+        array[i] = array_owners[i];
+    }
+    return array;
 }
 ```
 Run:
 ```javascript
-$ halmos --solver-timeout-assertion 0 --function check_selfie --loop 3
+$ halmos --solver-timeout-assertion 0 --function check_backdoor --loop 100
 ...
-Counterexample:
-    halmos_selector_bytes4_0b23fde_25 = permit
-    halmos_selector_bytes4_557bab0_51 = transferFrom
-    ...
-Killed
+[console.log] walletOwner is
+[console.log] Concat(0x000000000000000000000000, Extract(p__owners[0]_address_c7821fc_58()))
+...
 ```
-If we do not take into account the fake [permit-transferFrom](https://github.com/igorganich/damn-vulnerable-defi-halmos/blob/master/test/truster/README.md#counterexamples-analysis) counterexample we are familiar with, then the solution is still not found. Moreover, it did not even complete due to Out-of-memory. It is necessary to optimize!
+So much better!
+## Beating recursion issue
+```javascript
+halmos --solver-timeout-assertion 0 --function check_backdoor --loop 100 -vvvvv
+...
+Path #9642:
+...
+    CALL 0xaaaa0003::simulateAndRevert(...)
+    ...
+        CALL 0xaaaa0004::createProxyWithNonce(...)
+    ...
+            CALL 0xbbbb0016::0x7bb34722()
+    ...
+                DELEGATECALL 0xbbbb0016::setup
+    ...
+                    DELEGATECALL 0xbbbb0016::handle_delegatecall()
+    ...
+                        CALL 0xaaaa0004::createProxyWithCallback(...)
+    ...
+                            CALL 0xbbbb0022::0x7bb34722()
+    ...                        
+...
+ERROR    ArgumentError: argument 1: RecursionError: maximum recursion depth exceeded 
+```
+Due to the high complexity of the setup, we have several ways to access the `SafeProxyFactory::deployProxy` function. In addition, creating a contract through this function can call `deployProxy` again, but from a different entry point:
+```solidity
+function createProxyWithNonce(...) public {
+    ...
+    proxy = deployProxy(_singleton, initializer, salt);
+    ...
+}
+...
+function createChainSpecificProxyWithNonce(...) public {
+   ...
+   proxy = deployProxy(_singleton, initializer, salt);
+   ...
+}
+...
+function createProxyWithCallback(...) public {
+    ...
+    proxy = createProxyWithNonce(_singleton, initializer, saltNonceWithCallback);
+    ...
+}
+...
+```
+Therefore, the usual way of avoiding recursion by using `get_concrete_from_symbolic_optimized` is not suitable for us. A new, stronger way is needed. To do this, we will add new functionality to **GlobalStorage** to catch such more complex recursion scenarios:
+```solidity
+contract GlobalStorage is Test, SymTest {
+...
+    mapping (string => bool) anti_recursion_map;
+
+    function set_recursion_flag(string calldata id) public {
+        if (anti_recursion_map[id] == true) {
+            revert(); // recursion happened
+        }
+        anti_recursion_map[id] = true;
+    }
+
+    function remove_recursion_flag(string calldata id) public {
+        anti_recursion_map[id] = false;
+    }
+...
+```
+```solidity
+function deployProxy(...) {
+    glob.set_recursion_flag("deployProxy");
+    ...
+    glob.remove_recursion_flag("deployProxy");
+}
+```
 ## Optimizations and heuristics
 We have already met with path explosion limits in [Naive-receiver](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/naive-receiver#optimizations). And we can already highlight several directions of optimizations and heuristics that can be applied to bypass this limitation:
 1. Add "solid" optimizations, which are known to have no effect on the result.
