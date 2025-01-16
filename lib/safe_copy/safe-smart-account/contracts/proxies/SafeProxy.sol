@@ -17,7 +17,7 @@ interface IProxy {
  * @author Stefan George - <stefan@gnosis.io>
  * @author Richard Meissner - <richard@gnosis.io>
  */
-contract SafeProxy is SymTest{
+contract SafeProxy is Test, SymTest{
     // Singleton always needs to be first declared variable, to ensure that it is at the same location in the contracts to which calls are delegated.
     // To reduce deployment costs this variable is internal and needs to be retrieved via `getStorageAt`
     address internal singleton;
@@ -41,8 +41,13 @@ contract SafeProxy is SymTest{
         }
         reent_guard = true;
         bytes memory initializer_data = svm.createCalldata("Safe");
+        //address singleton_address;
+        //bytes memory initializer_data;
         //(singleton_address, initializer_data) = glob.get_concrete_from_symbolic_optimized(singleton);
+        uint snap0 = vm.snapshotState();
         (bool success,bytes memory returndata) = singleton.delegatecall(initializer_data);
+        uint snap1 = vm.snapshotState();
+        vm.assume(snap0 != snap1);
         reent_guard = false;
         if (!success) {
             // Revert with the returned data
@@ -70,7 +75,10 @@ contract SafeProxy is SymTest{
     }
 
     function _delegateCall() internal {
+        uint snap0 = vm.snapshotState();
         (bool success, bytes memory returndata) = singleton.delegatecall(msg.data);
+        uint snap1 = vm.snapshotState();
+        vm.assume(snap0 != snap1);
         if (!success) {
             // Revert with the returned data
             assembly {

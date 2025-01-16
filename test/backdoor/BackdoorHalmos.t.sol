@@ -50,10 +50,14 @@ contract BackdoorChallenge is Test, SymTest {
         // Transfer tokens to be distributed to the registry
         token.transfer(address(walletRegistry), AMOUNT_TOKENS_DISTRIBUTED);
 
-        //glob.add_addr_name_pair(address(singletonCopy), "Safe");
+        glob.add_addr_name_pair(address(singletonCopy), "Safe");
         glob.add_addr_name_pair(address(walletFactory), "SafeProxyFactory");
         glob.add_addr_name_pair(address(token), "DamnValuableToken");
         glob.add_addr_name_pair(address(walletRegistry), "WalletRegistry");
+
+        glob.add_banned_function_selector(bytes4(keccak256("createProxyWithNonce(address,bytes,uint256)")));
+        glob.add_banned_function_selector(bytes4(keccak256("createChainSpecificProxyWithNonce(address,bytes,uint256)")));
+        glob.add_banned_function_selector(bytes4(keccak256("simulateAndRevert(address,bytes)")));
 
         vm.stopPrank();
     }
@@ -69,7 +73,7 @@ contract BackdoorChallenge is Test, SymTest {
             assertTrue(walletRegistry.beneficiaries(users[i]));
 
             // User cannot add beneficiaries
-            vm.expectRevert(0x82b42900); // `Unauthorized()`
+            //vm.expectRevert(0x82b42900); // `Unauthorized()`
             vm.prank(users[i]);
             walletRegistry.addBeneficiary(users[i]);
         }

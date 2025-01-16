@@ -29,7 +29,6 @@ contract SafeProxyFactory is Test{
      */
     function deployProxy(address _singleton, bytes memory initializer, bytes32 salt) internal returns (SafeProxy proxy) {
         vm.assume(_singleton == address(0xaaaa0003));
-        glob.set_recursion_flag("deployProxy");
         require(isContract(_singleton), "Singleton contract not deployed");
 
         bytes memory deploymentData = abi.encodePacked(type(SafeProxy).creationCode, uint256(uint160(_singleton)));
@@ -54,7 +53,6 @@ contract SafeProxyFactory is Test{
             }*/
             proxy.symbolic_fallback();
         }
-        glob.remove_recursion_flag("deployProxy");
     }
 
     /**

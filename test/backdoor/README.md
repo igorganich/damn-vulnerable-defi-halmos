@@ -104,9 +104,8 @@ address symbolic_spender = svm.createAddress("symbolic_spender");
 assert(token.allowance(wallet, symbolic_spender) == 0);
 ...
 ```
-## Improvement of coverage
-### create2 during test
-In this challenge, we have a unique feature: the logic of the test is based on the fact that new contracts will be created during the test, which means that we need to add new contracts to **GlobalStorage** where they are created:
+## create2 during test
+In this challenge, we have a unique feature: the logic of the test is based on the fact that new contracts will be created during the test.
 ```soliidty
 function deployProxy(address _singleton, bytes memory initializer, bytes32 salt) internal returns (SafeProxy proxy) {
 ...
@@ -114,11 +113,11 @@ assembly {
     proxy := create2(0x0, add(0x20, deploymentData), mload(deploymentData), salt)
 }
 require(address(proxy) != address(0), "Create2 call failed");
-glob.add_addr_name_pair(address(proxy), "SafeProxy");
 ...
 ```
 Note that Halmos completely ignores the logic with `salt` when working with `create2` and creates new contracts with addresses `0xbbbb****`. 
 This is, in fact, convenient for us, because it turns out not a symbolic address, but a specific one.
+## Improvement of coverage
 ### delegatecall
 For the first time, we meet with the target-call pattern, but at the same time we do not make `call` but `delegatecall`:
 ```javascript
@@ -527,7 +526,8 @@ $ halmos --solver-timeout-assertion 0 --function check_backdoor --loop 100
 ...
 ```
 So much better!
-## Beating recursion issue
+## Optimizations and heuristics
+### Beating recursion issue
 ```javascript
 halmos --solver-timeout-assertion 0 --function check_backdoor --loop 100 -vvvvv
 ...
@@ -571,32 +571,104 @@ function createProxyWithCallback(...) public {
 }
 ...
 ```
-Therefore, the usual way of avoiding recursion by using `get_concrete_from_symbolic_optimized` is not suitable for us. A new, stronger way is needed. To do this, we will add new functionality to **GlobalStorage** to catch such more complex recursion scenarios:
+Therefore, the usual way of avoiding recursion by using `get_concrete_from_symbolic_optimized` is not suitable for us. Since `createProxyWithNonce` is called inside `createProxyWithCallback`, we can use the same approach as in Naive-receiver (add link) and simply cut scenarios with a direct symbolic call to `createProxyWithNonce` without sacrificing overall code coverage. We will do this by implementing a new functionality to exclude entire functions from coverage in **GlobalStorage**. This also will help us to conveniently exclude `permit` and similar functions:
 ```solidity
 contract GlobalStorage is Test, SymTest {
-...
-    mapping (string => bool) anti_recursion_map;
+    constructor() {
+        add_banned_function_selector(bytes4(keccak256("permit(address,address,uint256,uint256,uint8,bytes32,bytes32)")));
+        add_banned_function_selector(bytes4(keccak256("delegateBySig(address,uint256,uint256,uint8,bytes32,bytes32)")));
+    }
+    ...
+    mapping (uint256 => bytes4) banned_selectors;
+    uint256 banned_selectors_size = 0;
 
-    function set_recursion_flag(string calldata id) public {
-        if (anti_recursion_map[id] == true) {
-            revert(); // recursion happened
+    function add_banned_function_selector(bytes4 selector) public {
+        banned_selectors[banned_selectors_size] = selector;
+        banned_selectors_size++;
+    }
+    ...
+    function get_concrete_from_symbolic_optimized (address /*symbolic*/ addr) public 
+                                        returns (address ret, bytes memory data) 
+    {
+    ...
+        vm.assume(selector == bytes4(data));
+        for (uint256 s = 0; s < banned_selectors_size; s++) {
+            vm.assume(selector != banned_selectors[s]);
         }
-        anti_recursion_map[id] = true;
+        ...
     }
-
-    function remove_recursion_flag(string calldata id) public {
-        anti_recursion_map[id] = false;
-    }
-...
 ```
 ```solidity
-function deployProxy(...) {
-    glob.set_recursion_flag("deployProxy");
+function setUp() public {
     ...
-    glob.remove_recursion_flag("deployProxy");
+    glob.add_banned_function_selector(bytes4(keccak256("createProxyWithNonce(address,bytes,uint256)")));
+    glob.add_banned_function_selector(bytes4(keccak256("createChainSpecificProxyWithNonce(address,bytes,uint256)")));
+    vm.stopPrank();
 }
 ```
-## Optimizations and heuristics
+The `createChainSpecificProxyWithNonce` function was also banned as its only difference from `createProxyWithNonce` is the generated salt. And since Halmos completely ignores salt when creating contracts via `create2` - there is no point in checking this function separately.
+### simulateAndRevert function
+Let's look on this function from **safe-smart-account**:
+```solidity
+function simulateAndRevert(address targetContract, bytes memory calldataPayload) external {
+    // solhint-disable-next-line no-inline-assembly
+    assembly {
+        let success := delegatecall(gas(), targetContract, add(calldataPayload, 0x20), mload(calldataPayload), 0, 0)
+
+        mstore(0x00, success)
+        mstore(0x20, returndatasize())
+        returndatacopy(0x40, 0, returndatasize())
+        revert(0, add(returndatasize(), 0x40))
+    }
+}
+```
+It is built in such a way that it is guaranteed to avoid side effects. Since it can produce a whole tree of symbolic calls that are guaranteed to lead to nothing, we will simply disable it for optimization:
+```solidity
+glob.add_banned_function_selector(bytes4(keccak256("simulateAndRevert(address,bytes)")));
+```
+### State snapshots
+Until now, when using symbolic calls, we never checked whether it ended with a **revert** or whether the transaction was successful. In fact, this only inflates the number of possible paths, since even if the transaction fails, we continue to check the path. And, as practice shows, we can only be interested in transactions that somehow changed the state of the contracts. Now we will use a cool new approach via state snapshots, which became possible after the Halmos 0.2.3 update.
+Its essence is simple: before any symbolic `call`, we generate a `uint` dump of the current state of the system. After that `call` - read again and compare. If the state did not change, it was guaranteed to be an "empty" transaction and there is no point in continuing to execute this path. 
+
+One example of such an approach:
+```solidity
+function execute_tx(string memory target_name) private {
+    ...
+    uint snap0 = vm.snapshotState();
+    target.call(data);
+    uint snap1 = vm.snapshotState();
+    vm.assume(snap0 != snap1);
+}
+```
+
+
+
+```javascript
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```
+
+
+
+
+
+
 We have already met with path explosion limits in [Naive-receiver](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/naive-receiver#optimizations). And we can already highlight several directions of optimizations and heuristics that can be applied to bypass this limitation:
 1. Add "solid" optimizations, which are known to have no effect on the result.
 2. Add heuristics that can cut some scenarios, but don't reduce overall code coverage.

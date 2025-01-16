@@ -28,11 +28,11 @@ abstract contract Executor is Test, SymTest{
         Enum.Operation operation,
         uint256 txGas
     ) internal returns (bool success) {
+        uint snap0 = vm.snapshotState();
         if (operation == Enum.Operation.DelegateCall) {
             // solhint-disable-next-line no-inline-assembly
             vm.assume(to == address(0xaaaa0007));
             bytes memory mydata = abi.encodeWithSignature("handle_delegatecall()");
-            //vm.assume(bytes4(data) == bytes4(keccak256("handle_delegatecall()")));
             assembly {
                 success := delegatecall(txGas, to, add(mydata, 0x20), mload(mydata), 0, 0)
             }
@@ -42,10 +42,8 @@ abstract contract Executor is Test, SymTest{
             //Get some concrete target-name pair
             (target, mydata) = glob.get_concrete_from_symbolic_optimized(target);
             target.call(mydata);
-            
-            /*assembly {
-                success := call(txGas, to, value, add(data, 0x20), mload(data), 0, 0)
-            }*/
         }
+        uint snap1 = vm.snapshotState();
+        vm.assume(snap0 != snap1);
     }
 }

@@ -25,7 +25,10 @@ contract SymbolicAttacker is Test, SymTest {
         bytes memory data;
         //Get some concrete target-name pair
         (target, data) = glob.get_concrete_from_symbolic_optimized(target);
+        uint snap0 = vm.snapshotState();
         target.call(data);
+        uint snap1 = vm.snapshotState();
+        vm.assume(snap0 != snap1);
     }
 
 	function attack() public {

@@ -6,6 +6,12 @@ import "./halmos-cheatcodes/src/SymTest.sol";
 import {Test, console} from "forge-std/Test.sol";
 
 contract GlobalStorage is Test, SymTest {
+
+    constructor() {
+        add_banned_function_selector(bytes4(keccak256("permit(address,address,uint256,uint256,uint8,bytes32,bytes32)")));
+        add_banned_function_selector(bytes4(keccak256("delegateBySig(address,uint256,uint256,uint8,bytes32,bytes32)")));
+    }
+
     // uint256->address mapping to have an ability to iterate over addresses
     mapping (uint256 => address) addresses;
     mapping (address => string) names_by_addr;
@@ -14,15 +20,12 @@ contract GlobalStorage is Test, SymTest {
     mapping (uint256 => bytes4) used_selectors;
     uint256 used_selectors_size = 0;
 
-    mapping (string => bool) anti_recursion_map;
+    mapping (uint256 => bytes4) banned_selectors;
+    uint256 banned_selectors_size = 0;
 
-    function set_recursion_flag(string calldata id) public {
-        vm.assume(anti_recursion_map[id] == false);
-        anti_recursion_map[id] = true;
-    }
-
-    function remove_recursion_flag(string calldata id) public {
-        anti_recursion_map[id] = false;
+    function add_banned_function_selector(bytes4 selector) public {
+        banned_selectors[banned_selectors_size] = selector;
+        banned_selectors_size++;
     }
 
     // Addresses and names information is stored using this setter
@@ -70,17 +73,11 @@ contract GlobalStorage is Test, SymTest {
                 data = svm.createCalldata(name);
                 bytes4 selector = svm.createBytes4("selector");
                 vm.assume(selector == bytes4(data));
-                // Not DamnValuableVotes::permit
-                vm.assume(selector != bytes4(keccak256("permit(address,address,uint256,uint256,uint8,bytes32,bytes32)")));
-                // Not DamnValuableVotes::delegateBySig
-                vm.assume(selector != bytes4(keccak256("delegateBySig(address,uint256,uint256,uint8,bytes32,bytes32)")));
-                
-
-                vm.assume(selector != bytes4(keccak256("createProxyWithNonce(address,bytes,uint256)")));
-                vm.assume(selector != bytes4(keccak256("createChainSpecificProxyWithNonce(address,bytes,uint256)")));
-
+                for (uint256 s = 0; s < banned_selectors_size; s++) {
+                    vm.assume(selector != banned_selectors[s]);
+                }
                 for (uint256 s = 0; s < used_selectors_size; s++) {
-                    vm.assume(selector != used_selectors[i]);
+                    vm.assume(selector != used_selectors[s]);
                 }
                 used_selectors[used_selectors_size] = selector;
                 used_selectors_size++;
