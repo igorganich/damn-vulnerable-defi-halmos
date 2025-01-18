@@ -272,7 +272,7 @@ contract GlobalStorage is Test, SymTest {
     {
         ...
         for (uint256 s = 0; s < used_selectors_size; s++) {
-            vm.assume(selector != used_selectors[i]);
+            vm.assume(selector != used_selectors[s]);
         }
         used_selectors[used_selectors_size] = selector;
         used_selectors_size++;
