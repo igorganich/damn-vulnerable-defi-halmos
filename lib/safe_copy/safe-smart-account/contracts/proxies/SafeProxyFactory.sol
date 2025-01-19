@@ -28,7 +28,7 @@ contract SafeProxyFactory is Test{
      * @return proxy Address of the new proxy contract.
      */
     function deployProxy(address _singleton, bytes memory initializer, bytes32 salt) internal returns (SafeProxy proxy) {
-        vm.assume(_singleton == address(0xaaaa0003));
+        //vm.assume(_singleton == address(0xaaaa0003));
         require(isContract(_singleton), "Singleton contract not deployed");
 
         bytes memory deploymentData = abi.encodePacked(type(SafeProxy).creationCode, uint256(uint160(_singleton)));
@@ -37,20 +37,10 @@ contract SafeProxyFactory is Test{
             proxy := create2(0x0, add(0x20, deploymentData), mload(deploymentData), salt)
         }
         require(address(proxy) != address(0), "Create2 call failed");
-
-        //glob.add_addr_name_pair(address(proxy), "SafeProxy");
-
-        //address proxy_address;
-        //bytes memory initializer_data;
-        //(proxy_address, initializer_data) = glob.get_concrete_from_symbolic_optimized(address(proxy));
+        string memory singleton_name = glob.get_contract_name_by_address(_singleton);
+        glob.add_addr_name_pair(address(proxy), singleton_name);
 
         if (initializer.length > 0) {
-            // solhint-disable-next-line no-inline-assembly
-            /*assembly {
-                if eq(call(gas(), proxy, 0, add(initializer, 0x20), mload(initializer), 0, 0), 0) {
-                    revert(0, 0)
-                }
-            }*/
             proxy.symbolic_fallback();
         }
     }

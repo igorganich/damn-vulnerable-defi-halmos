@@ -173,29 +173,7 @@ contract Safe is
             // Increase nonce and execute transaction.
             nonce++;
             txHash = keccak256(txHashData);
-            //checkSignatures(txHash, txHashData, signatures);
         }
-        /*address guard = getGuard();
-        {
-            if (guard != address(0)) {
-                Guard(guard).checkTransaction(
-                    // Transaction info
-                    to,
-                    value,
-                    data,
-                    operation,
-                    safeTxGas,
-                    // Payment info
-                    baseGas,
-                    gasPrice,
-                    gasToken,
-                    refundReceiver,
-                    // Signature info
-                    signatures,
-                    msg.sender
-                );
-            }
-        }*/
         // We require some gas to emit the events (at least 2500) after the execution and some to perform code until the execution (500)
         // We also include the 1/64 in the check that is not send along with a call to counteract potential shortings because of EIP-150
         require(gasleft() >= ((safeTxGas * 64) / 63).max(safeTxGas + 2500) + 500, "GS010");
@@ -216,11 +194,6 @@ contract Safe is
             }
             if (success) emit ExecutionSuccess(txHash, payment);
             else emit ExecutionFailure(txHash, payment);
-        }
-        {
-            /*if (guard != address(0)) {
-                Guard(guard).checkAfterExecution(txHash, success);
-            }*/
         }
     }
 

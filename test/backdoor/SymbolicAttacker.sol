@@ -8,15 +8,8 @@ import "lib/GlobalStorage.sol";
 
 contract SymbolicAttacker is Test, SymTest {
 
-    //bool delegatecall_reent_guard = false;
-
     function handle_delegatecall() public {
-        /*if (delegatecall_reent_guard) {
-            revert();
-        }*/
-        //delegatecall_reent_guard = true;
         execute_tx("handle_delegatecall_target");
-        //delegatecall_reent_guard = false;
     }
 
     function execute_tx(string memory target_name) private {
@@ -37,6 +30,5 @@ contract SymbolicAttacker is Test, SymTest {
             revert();
         }
         execute_tx("attack_target");
-        //execute_tx();
     }
 }
