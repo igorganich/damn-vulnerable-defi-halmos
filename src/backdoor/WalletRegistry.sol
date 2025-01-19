@@ -104,12 +104,9 @@ contract WalletRegistry is IProxyCreationCallback, Ownable {
         unchecked {
             walletOwner = owners[0];
         }
-        console.log("walletOwner is");
-        console.log(walletOwner);
         if (!beneficiaries[walletOwner]) {
             revert OwnerIsNotABeneficiary();
         }
-        console.log("owner is valid");
 
         address fallbackManager = _getFallbackManager(walletAddress);
         if (fallbackManager != address(0)) {

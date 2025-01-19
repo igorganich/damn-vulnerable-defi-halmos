@@ -764,7 +764,7 @@ At this stage, we have 2 news: good and bad.
 Bad: After running the test and letting it to work for 12 hours, I still couldn't finish it on my machine. And it's not about recursion, the setup is really very abstract and easily leads to path explosion. And let me remind you, we run only one attacking transaction in **SymbolicAttacker**.
 
 Good: After about 40 minutes, it starts generating valid counterexamples: 
-```javascrript
+```javascript
 halmos --solver-timeout-assertion 0 --solver-timeout-branching 0 --function check_backdoor --loop 100
 ...
 WARNING  Counterexample (potentially invalid):
@@ -891,7 +891,7 @@ Suite result: ok. 2 passed; 0 failed; 0 skipped; finished in 9.43ms (1.69ms CPU 
 ```
 Success!
 ## Fuzzing?
-According to tradition, this should be some effort "to fit a square peg into a round hole" and somehow make fuzzing engine work in the current problem. But, in fact, we are unlikely to find any "academic novelty" in this. We have already seen how Echidna behaves in tasks with a high level of abstraction and how unnatural, inconvenient and even "fraudulent" it seems to prepare for such a solution to the problem using the example of [selfie](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/selfie/test/selfie#fuzzing-vs-selfie). Therefore, in this article I will not torture myself or the reader, and we will abandon the search for a solution through fuzzing. But I'd be happy to look at someone's elegant solution via fuzzing, if it exists. I will be glad to be wrong in my conclusions :D.
+According to tradition, this should be some effort "to fit a square peg into a round hole" and somehow make fuzzing engine work in the current problem. But, in fact, we are unlikely to find any "academic novelty" in this. We have already seen how Echidna behaves in tasks with a high level of abstraction and how unnatural, inconvenient and even "fraudulent" it seems to prepare for such a solution to the problem using the example of [selfie](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/selfie#fuzzing-vs-selfie). Therefore, in this article I will not torture myself or the reader, and we will abandon the search for a solution through fuzzing. But I'd be happy to look at someone's elegant solution via fuzzing, if it exists. I will be glad to be wrong in my conclusions :D.
 
 ## Conclusions
 1. Halmos has proven itself to be a powerful tool even in the case of such contracts overloaded with abstractions. The main thing is to meticulously deal with code coverage and skillfully use optimizations with heuristics.

@@ -6,7 +6,6 @@ import "./halmos-cheatcodes/src/SymTest.sol";
 import {Test, console} from "forge-std/Test.sol";
 
 contract GlobalStorage is Test, SymTest {
-
     constructor() {
         add_banned_function_selector(bytes4(keccak256("permit(address,address,uint256,uint256,uint8,bytes32,bytes32)")));
         add_banned_function_selector(bytes4(keccak256("delegateBySig(address,uint256,uint256,uint8,bytes32,bytes32)")));
@@ -19,7 +18,6 @@ contract GlobalStorage is Test, SymTest {
 
     mapping (uint256 => bytes4) used_selectors;
     uint256 used_selectors_size = 0;
-
     mapping (uint256 => bytes4) banned_selectors;
     uint256 banned_selectors_size = 0;
 
@@ -56,7 +54,7 @@ contract GlobalStorage is Test, SymTest {
                 return (ret, data);
             }
         }
-        vm.assume(false);// Ignore cases when addr is not some concrete known address
+        revert(); // Ignore cases when addr is not some concrete known address
     }
 
     /*
@@ -84,23 +82,6 @@ contract GlobalStorage is Test, SymTest {
                 return (ret, data);
             }
         }
-        vm.assume(false);// Ignore cases when addr is not some concrete known address
-    }
-
-    /*
-    ** The logic of this function is similar to the logic of get_concrete_from_symbolic, 
-    ** with the difference that this time the name of the contract is returned 
-    ** instead of the ready calldata
-    */
-    function get_contract_name_by_address (address /*symbolic*/ addr ) public
-                                        returns (string memory name)
-    {
-        for (uint256 i = 0; i < addresses_list_size; i++) {
-            if (addresses[i] == addr) {
-                name = names_by_addr[addresses[i]];
-                return name;
-            }
-        }
-        vm.assume(false);// Ignore cases when addr is not some concrete known address
+        revert(); // Ignore cases when addr is not some concrete known address
     }
 }
