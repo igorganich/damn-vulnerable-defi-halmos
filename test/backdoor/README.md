@@ -108,7 +108,7 @@ assert(token.allowance(wallet, symbolic_spender) == 0);
 ```
 ## Improvement of coverage
 ### delegatecall
-For the first time, we meet with the target-call pattern, but at the same time we do not make `call` but `delegatecall`:
+For the first time, we meet with the target-call pattern, but in a new form: this time we do not make `call` but `delegatecall`:
 ```javascript
 Path #22:
 ...
@@ -143,8 +143,12 @@ function simulateAndRevert(address targetContract, bytes memory calldataPayload)
 ```
 We will handle the `delegatecall` of a symbolic target quite simply: цe will specify our **SymbolicAttacker** as the only target, and the only function should be some `handle_delegatecall()` callback, in which we will symbolically iterate through the functions using the familiar method:
 ```solidity
-function handle_delegatecall() public {
-    execute_tx("handle_delegatecall_target");
+contract SymbolicAttacker is Test, SymTest {
+...
+    function handle_delegatecall() public {
+        execute_tx("handle_delegatecall_target");
+    }
+...
 }
 ```
 ```solidity
@@ -152,7 +156,9 @@ function handle_delegatecall() public {
 function simulateAndRevert(address targetContract, bytes memory calldataPayload) external {
     vm.assume(targetContract == address(0xaaaa0007));
     vm.assume(bytes4(calldataPayload) == bytes4(keccak256("handle_delegatecall()")));
-    ...
+    assembly {
+        let success := delegatecall(gas(), targetContract, add(calldataPayload, 0x20), mload(calldataPayload), 0, 0)
+        ...
 }
 ```
 There are several more such places with `delegatecall` crash:
@@ -178,7 +184,7 @@ function deployProxy(...) {
     }
 }
 ```
-I know, it is not clear what happened from these logs. But it is enough to look at the implementation of **SafeProxy** and everything will become clear:
+This trace is a little bit tricky so it is not clear what happened here. But it is enough to look at the implementation of **SafeProxy** and everything will become clear:
 ```solidity
 contract SafeProxy {
     // Singleton always needs to be first declared variable, to ensure that it is at the same location in the contracts to which calls are delegated.
@@ -215,13 +221,13 @@ contract SafeProxy {
     }
 }
 ```
-Halmos automatically performs `fallback()` (which is the only function of this contract). And inside it is this `delegatecall`. Before fixing this error, let's talk about how this feature works in general at the moment in the context of Halmos. 
+Halmos automatically performs `fallback()` (which is the only function of this contract). And inside it is `delegatecall` to its singleton. Before fixing this error, let's talk about how this feature works in general at the moment in the context of Halmos. 
 
 This contract is written in such a way that it is convenient to use any function from **Safe** while calling **safeProxy**.  And since Halmos handles the case when the function we're trying to reach from the `proxy` doesn't exist in the `singleton`, it can call a `fallback` again. So we have to add protection against recursion.
 
 Next, since the `singleton` address is transmitted in a symbolic manner when creating a `proxy`, we work with some symbolic `singleton`.
 
-We need to fix the "symbolic offset" error that occurs when using the target-call pattern, while not damaging the main logic of this `proxy`. It's hard to think of anything better than just adding another `symbolic_fallback` function that will handle this specific case that throws this error:
+We need to fix the "symbolic offset" error that occurs inside `SafeProxyFactory::deployProxy()`, while not damaging the main logic of this `proxy`. It's hard to think of anything better than just adding another `symbolic_fallback` function that will handle this specific case:
 ```solidity
 contract SafeProxy is Test, SymTest{
     address internal singleton;
@@ -416,8 +422,33 @@ CALL SafeProxyFactory::createProxyWithCallback(...)
     ...
 ```
 This revert is worth our attention, because at the moment all the code of this function that follows this revert is blocked. This revert happens 100% of the time if it reaches this point.
+```solidity
+function proxyCreated(SafeProxy proxy, address singleton, bytes calldata initializer, uint256) external override {
+...
+    address walletOwner;
+    unchecked {
+        walletOwner = owners[0];
+    }
+    if (!beneficiaries[walletOwner]) {
+        revert OwnerIsNotABeneficiary(); // This revert occurs every time!
+    }
 
-This revert happens after we made a valid `call` to `createProxyWithCallback`. `setup` was executed, but for some reason Halmos cannot understand that the `owner` we passed in the setup process can be some valid `owner`:
+    address fallbackManager = _getFallbackManager(walletAddress);
+    if (fallbackManager != address(0)) {
+        revert InvalidFallbackManager(fallbackManager);
+    }
+
+    // Remove owner as beneficiary
+    beneficiaries[walletOwner] = false;
+
+    // Register the wallet under the owner's address
+    wallets[walletOwner] = walletAddress;
+
+    // Pay tokens to the newly created wallet
+    SafeTransferLib.safeTransfer(address(token), walletAddress, PAYMENT_AMOUNT);
+}
+```
+This revert happens after we made a valid `call` to `createProxyWithCallback`. `setup` was executed, but for some reason Halmos cannot understand that the `owner` we passed during `setup()` can be some valid `owner`:
 ```solidity
 function createProxyWithCallback(...) {
     uint256 saltNonceWithCallback = uint256(keccak256(abi.encodePacked(saltNonce, callback)));
@@ -435,10 +466,12 @@ function setup(
     ...
 }
 ```
+Given that there is an `owners` count check before `OwnerIsNotABeneficiary` revert, at least, it sees a scenario where there is only one `owner`:
 ```solidity
 function proxyCreated(SafeProxy proxy, address singleton, bytes calldata initializer, uint256) external override {
-    ...
-    if (owners.length != EXPECTED_OWNERS_COUNT) { // 1 is expected count
+...
+    address[] memory owners = Safe(walletAddress).getOwners();
+    if (owners.length != EXPECTED_OWNERS_COUNT) { // EXPECTED_OWNERS_COUNT == 1
         revert InvalidOwnersCount(owners.length);
     }
 
@@ -447,12 +480,10 @@ function proxyCreated(SafeProxy proxy, address singleton, bytes calldata initial
     unchecked {
         walletOwner = owners[0];
     }
-    if (!beneficiaries[walletOwner]) {
-        revert OwnerIsNotABeneficiary();
-    }
-    ...
+...
 ```
-At least, it sees a scenario where there is only one `owner`. Let's print this `owner`, see why Halmos doesn't see that owner can be valid:
+
+Let's print this `owner`, see why Halmos doesn't see that it can be valid:
 ```solidity
 ...
 console.log("walletOwner is");
@@ -468,7 +499,7 @@ $ halmos --solver-timeout-assertion 0 --function check_backdoor --loop 100
 [console.log] 0x0000000000000000000000000000000000000000000000000000000000000000
 ...
 ```
-What? `0x0`? Why not symbolic? To answer this question, you need to understand how this algorithm stores and then reads the list of `owners`:
+What? `0x0`? Why not symbolic? To answer this question, we need to understand how this algorithm stores and then reads the list of `owners`:
 ```solidity
 ...
 address internal constant SENTINEL_OWNERS = address(0x1);
@@ -551,9 +582,9 @@ $ halmos --solver-timeout-assertion 0 --function check_backdoor --loop 100
 [console.log] Concat(0x000000000000000000000000, Extract(p__owners[0]_address_c7821fc_58()))
 ...
 ```
-So much better!
+So much better! The code below is now unlocked as Halmos can now see the scenario where `owner` is, for example **Alice** with address `0xcafe0003`.
 ### solver-timeout-branching halmos option
-Now let's move on to an important `--solver-timeout-branching` parameter of Halmos. If you examine several different logs with full traces of all paths that were made in different runs, you can see that they differ a lot. Halmos starts to run erratically, especially if the working machine is overloaded: entire functions have been ignored. This is a clear sign that the solver does not cope with branching. Simply put: every time Halmos encounters a branching statement (for example **if**), it runs a solver that determines whether the statement is **true** or **false**. And, unfortunately, sometimes the solver cannot calculate it quickly (especially in such complex setups with an overloaded number of symbolic variables). Because of this, it does not fit into the timeout allocated to it, and branching does not occur in a correct way. 
+Now let's move on to an important `--solver-timeout-branching` parameter of Halmos. If you examine several different logs with full traces of all paths that were made in different runs, you can see that they differ a lot. Halmos starts to run erratically, especially if the working machine is overloaded: entire functions have been ignored. This is a clear sign that the solver does not cope with **branching**. Simply put: every time Halmos encounters a branching statement (for example `if()`), it runs a solver that determines whether the statement is **true** or **false**. And, unfortunately, sometimes the solver cannot calculate it quickly (especially in such complex setups with an overloaded number of symbolic variables). Because of this, it does not fit into the timeout allocated to it, and branching does not occur in a correct way. 
 
 The solution is actually quite simple, but expensive. We simply add another startup parameter:
 ```javascript
@@ -575,7 +606,7 @@ require(address(proxy) != address(0), "Create2 call failed");
 ```
 Note that Halmos completely ignores the logic with `salt` when working with `create2` and creates new contracts with addresses `0xbbbb****`. This is, in fact, convenient for us, because it turns out not a symbolic address, but a specific one.
 
-And of course, we do not forget that if some contract was created, it should be added to **GlobalStorage**. But it would be naive to just add the address of the new contract and its name **SafeProxy**:
+And of course, we do not forget that if some contract was created, it should be added to **GlobalStorage**. But it would be naive to just add the address of the new contract and its name "**SafeProxy**":
 ```solidity
 glob.add_addr_name_pair(address(proxy), "SafeProxy");
 ```
@@ -614,7 +645,7 @@ function deployProxy(address _singleton, bytes memory initializer, bytes32 salt)
 ## Optimizations and heuristics
 ### Beating recursion issue
 ```javascript
-halmos --solver-timeout-assertion 0 --function check_backdoor --loop 100 -vvvvv
+halmos --solver-timeout-assertion 0 --solver-timeout-branching 0 --function check_backdoor --loop 100 -vvvvv
 ...
 Path #9642:
 ...
@@ -656,7 +687,7 @@ function createProxyWithCallback(...) public {
 }
 ...
 ```
-Therefore, the usual way of avoiding recursion by using `get_concrete_from_symbolic_optimized` is not suitable for us. Since `createProxyWithNonce` is called inside `createProxyWithCallback`, we can use the same approach as in [naive-receiver](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/selfie/test/naive-receiver#proxy-heuristics) and simply cut scenarios with a direct symbolic call to `createProxyWithNonce` without sacrificing overall code coverage. We will do this by implementing a new functionality to exclude entire functions from coverage in **GlobalStorage**. This also will help us to conveniently exclude `permit` and similar functions:
+Therefore, the usual way of avoiding recursion by using `get_concrete_from_symbolic_optimized` is not suitable for us. Since `createProxyWithNonce` is called inside `createProxyWithCallback`, we can use the same approach as in [naive-receiver](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/selfie/test/naive-receiver#proxy-heuristics) and simply cut scenarios with a direct symbolic call to `createProxyWithNonce` without sacrificing overall code coverage. We will do this by implementing a new functionality to exclude entire functions from symbolic calls coverage in **GlobalStorage**. This also will help us to conveniently exclude `permit` and similar functions:
 ```solidity
 contract GlobalStorage is Test, SymTest {
     constructor() {
@@ -692,6 +723,22 @@ function setUp() public {
 }
 ```
 The `createChainSpecificProxyWithNonce` function was also banned as its only difference from `createProxyWithNonce` is the generated salt. And since Halmos completely ignores salt when creating contracts via `create2` - there is no point in checking this function separately.
+### State snapshots
+Until now, when using symbolic calls, we never checked whether it ended with a **revert** or whether the transaction was successful. In fact, this only inflates the number of possible paths, since even if the transaction fails, we continue to check the path. And, as practice shows, we can only be interested in transactions that somehow changed the state of the contracts. Now we will use a cool new approach via **state snapshots**, which became possible after the Halmos 0.2.3 update.
+
+Its essence is simple: before any symbolic `call`, we generate a `uint` dump of the current state of the system. After that `call` - read dump again and compare with the previous one. If the state did not change, it was guaranteed to be an "empty" transaction and there is no point in continuing to execute this path. 
+
+One example of such an approach:
+```solidity
+function execute_tx(string memory target_name) private {
+    ...
+    uint snap0 = vm.snapshotState();
+    target.call(data);
+    uint snap1 = vm.snapshotState();
+    vm.assume(snap0 != snap1);
+}
+```
+To understand how strong this improvement is, it is enough to say that experiments with [Truster](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/truster) showed x5 speedup in finding solution.
 ### simulateAndRevert function
 Let's look on this function from **safe-smart-account**:
 ```solidity
@@ -711,25 +758,12 @@ It is built in such a way that it is guaranteed to avoid side effects. Since it 
 ```solidity
 glob.add_banned_function_selector(bytes4(keccak256("simulateAndRevert(address,bytes)")));
 ```
-### State snapshots
-Until now, when using symbolic calls, we never checked whether it ended with a **revert** or whether the transaction was successful. In fact, this only inflates the number of possible paths, since even if the transaction fails, we continue to check the path. And, as practice shows, we can only be interested in transactions that somehow changed the state of the contracts. Now we will use a cool new approach via **state snapshots**, which became possible after the Halmos 0.2.3 update.
-
-Its essence is simple: before any symbolic `call`, we generate a `uint` dump of the current state of the system. After that `call` - read dump again and compare with the previous one. If the state did not change, it was guaranteed to be an "empty" transaction and there is no point in continuing to execute this path. 
-
-One example of such an approach:
-```solidity
-function execute_tx(string memory target_name) private {
-    ...
-    uint snap0 = vm.snapshotState();
-    target.call(data);
-    uint snap1 = vm.snapshotState();
-    vm.assume(snap0 != snap1);
-}
-```
-To understand how strong this improvement is, it is enough to say that experiments with [Truster](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/truster) showed x5 speedup in finding solution.
-
 ## Counterexample analysis
-Finally, after all these preparations, we can finally get the counterexample:
+At this stage, we have 2 news: good and bad. 
+
+Bad: After running the test and letting it to work for 12 hours, I still couldn't finish it on my machine. And it's not about recursion, the setup is really very abstract and easily leads to path explosion. And let me remind you, we run only one attacking transaction in **SymbolicAttacker**.
+
+Good: After about 40 minutes, it starts generating valid counterexamples: 
 ```javascrript
 halmos --solver-timeout-assertion 0 --solver-timeout-branching 0 --function check_backdoor --loop 100
 ...
