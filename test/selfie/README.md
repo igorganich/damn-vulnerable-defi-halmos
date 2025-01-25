@@ -447,7 +447,7 @@ function executeAction(uint256 actionId) external payable returns (bytes memory)
 Also at this point we have recursion, as some function from **SymbolicAttacker** can be launched as a target.
 We remove such a scenario:
 ```solidity
-vm.assume(actionToExecute.target != address(0xaaaa0006));
+vm.assume(actionToExecute.target != address(0xaaaa0006)); // Not a SymbolicAttacker
 return actionToExecute.target.functionCallWithValue(actionToExecute.data, actionToExecute.value);
 ```
 Run again:
