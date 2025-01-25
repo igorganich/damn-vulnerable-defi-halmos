@@ -255,7 +255,6 @@ contract GlobalStorage is Test, SymTest {
         ...
     }
 ```
-```
 ### Cut scenarios
 Let's try to cut down the scenarios in which we symbolically enter the same function several times. Now we can't select the same function twice inside `get_concrete_from_symbolic` in the path. At the same time, the overall coverage of the code will not decrease, we will still go through all scenarios where these functions are entered once:
 ```solidity
