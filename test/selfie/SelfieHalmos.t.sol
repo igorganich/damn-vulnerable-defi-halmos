@@ -6,19 +6,19 @@ import {Test, console} from "forge-std/Test.sol";
 import {DamnValuableVotes} from "../../src/DamnValuableVotes.sol";
 import {SimpleGovernance} from "../../src/selfie/SimpleGovernance.sol";
 import {SelfiePool} from "../../src/selfie/SelfiePool.sol";
+import "lib/GlobalStorage.sol";
+import "./SymbolicAttacker.sol";
+import "halmos-cheatcodes/SymTest.sol";
 
-import "../../lib/SharedGlobalData.sol";
-import "./AbstractAttacker.sol";
-
-contract SelfieChallenge is Test {
-    address deployer = address(0xde4107e4);
-    address player = address(0x44E97aF4418b7a17AABD8090bEA0A471a366305C);
-    address recovery = address(0xa77ac3e5);
+contract SelfieChallenge is Test, SymTest {
+    address deployer = address(0xcafe0000);
+    address player = address(0xcafe0001);
+    address recovery = address(0xcafe0002);
 
     uint256 constant TOKEN_INITIAL_SUPPLY = 2_000_000e18;
     uint256 constant TOKENS_IN_POOL = 1_500_000e18;
 
-    SharedGlobalData shared_data;
+    GlobalStorage glob;
     DamnValuableVotes token;
     SimpleGovernance governance;
     SelfiePool pool;
@@ -34,10 +34,9 @@ contract SelfieChallenge is Test {
      * SETS UP CHALLENGE - DO NOT TOUCH
      */
     function setUp() public {
-        console.log("setUp");
         startHoax(deployer);
 
-        shared_data = new SharedGlobalData();
+        glob = new GlobalStorage();
 
         // Deploy token
         token = new DamnValuableVotes(TOKEN_INITIAL_SUPPLY);
@@ -51,14 +50,9 @@ contract SelfieChallenge is Test {
         // Fund the pool
         token.transfer(address(pool), TOKENS_IN_POOL);
 
-        console.log("shared_data", address(shared_data));
-        console.log("token", address(token));
-        console.log("governance", address(governance));
-        console.log("pool", address(pool));
-
-        //shared_data.add_known_address_with_name(address(token), "DamnValuableVotes");
-        shared_data.add_known_address_with_name(address(governance), "SimpleGovernance");
-        shared_data.add_known_address_with_name(address(pool), "SelfiePool");
+        glob.add_addr_name_pair(address(token), "DamnValuableVotes");
+        glob.add_addr_name_pair(address(governance), "SimpleGovernance");
+        glob.add_addr_name_pair(address(pool), "SelfiePool");
 
         vm.stopPrank();
     }
@@ -78,10 +72,15 @@ contract SelfieChallenge is Test {
      * CODE YOUR SOLUTION HERE
      */
     function check_selfie() public checkSolvedByPlayer {
-        console.log(address(this));
-        console.log("check_selfie");
-        token.approve(address(pool), 2**256 - 1); // unlimited approve
-        AbstractAttacker attacker = new AbstractAttacker();
+        SymbolicAttacker attacker = new SymbolicAttacker();
+        console.log("GlobalStorage\t", address(glob));
+        console.log("token\t\t", address(token));
+        console.log("governance\t", address(governance));
+        console.log("pool\t\t", address(pool));
+        console.log("attacker\t\t", address(attacker));
+        attacker.preload(pool, token);
+        uint256 warp = svm.createUint256("preattack_warp");
+        vm.warp(block.timestamp + warp); // wait for symbolic time between transactions
         attacker.attack();
     }
 
@@ -89,9 +88,17 @@ contract SelfieChallenge is Test {
      * CHECKS SUCCESS CONDITIONS - DO NOT TOUCH
      */
     function _isSolved() private view {
-        // Player has taken all tokens from the pool
-        assert(token.balanceOf(address(pool)) != 0);
-        //assertEq(token.balanceOf(address(pool)), 0, "Pool still has tokens");
-        //assertEq(token.balanceOf(recovery), TOKENS_IN_POOL, "Not enough tokens in recovery account");
+        assert (token.balanceOf(address(pool)) >= TOKENS_IN_POOL);
+
+        // Check allowance changes
+        address symbolicSpender = svm.createAddress("symbolicSpender");
+        assert (token.allowance(address(pool), symbolicSpender) == 0);
+        assert (token.allowance(address(governance), symbolicSpender) == 0);
+
+        // Check if governance's _votingToken may be changed
+        assert (governance._votingToken() == token);
+
+        // Check number of registered actions
+        //assert (governance._actionCounter() == 1);
     }
 }
