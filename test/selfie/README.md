@@ -160,7 +160,7 @@ And, indeed, we help the solver by assuming that the only `_receiver` can only b
 ```solidity
 function flashLoan(...)
 {
-    vm.assume(address(_receiver) == address(0xaaaa0006));
+    vm.assume(address(_receiver) == address(0xaaaa0006)); // SymbolicAttacker
     ...
 }
 ```
@@ -226,39 +226,35 @@ We have already met with path explosion limits in [Naive-receiver](https://githu
 
 Let's go through each of these points.
 ### Solid optimizations
-The first thing I can think of here is to completely exclude `ERC20::permit` from symbolic function candidates, which is already starting to get annoying. I can't think of any scenario where we could apply it where `ERC20Votes::approve` is not applicable:
+The first thing I can think of here is to completely exclude `ERC20::permit` from symbolic function candidates, which is already starting to get annoying. I can't think of any scenario where we could apply it where `ERC20Votes::approve` is not applicable. A similar situation with `ERC20Votes::delegateBySig`. We have a simple `ERC20Votes::delegate` that we can apply in all the same scenarios.
+
+So we will ban them by implementing a new functionality to exclude entire functions from symbolic calls coverage in GlobalStorage:
 ```solidity
-/*
-** This function has the same purpose as get_concrete_from_symbolic, 
-** but applies optimizations and heuristics.
-*/
-function get_concrete_from_symbolic_optimized (address /*symbolic*/ addr) public view 
-                                    returns (address ret, bytes memory data) 
-{
-    for (uint256 i = 0; i < addresses_list_size; i++) {
-        if (addresses[i] == addr) {
-            string memory name = names_by_addr[addresses[i]];
-            ret = addresses[i];
-            data = svm.createCalldata(name);
-            bytes4 selector = svm.createBytes4("selector");
-            vm.assume(selector == bytes4(data));
-            // Not DamnValuableVotes permit
-            vm.assume(selector != bytes4(keccak256("permit(address,address,uint256,uint256,uint8,bytes32,bytes32)")));
-            return (ret, data);
-        }
+contract GlobalStorage is Test, SymTest {
+    constructor() {
+        add_banned_function_selector(bytes4(keccak256("permit(address,address,uint256,uint256,uint8,bytes32,bytes32)")));
+        add_banned_function_selector(bytes4(keccak256("delegateBySig(address,uint256,uint256,uint8,bytes32,bytes32)")));
     }
-    revert(); // Ignore cases when addr is not some concrete known address
-}
+    ...
+    mapping (uint256 => bytes4) banned_selectors;
+    uint256 banned_selectors_size = 0;
+
+    function add_banned_function_selector(bytes4 selector) public {
+        banned_selectors[banned_selectors_size] = selector;
+        banned_selectors_size++;
+    }
+    ...
+    function get_concrete_from_symbolic_optimized (address /*symbolic*/ addr) public 
+                                        returns (address ret, bytes memory data) 
+    {
+    ...
+        vm.assume(selector == bytes4(data));
+        for (uint256 s = 0; s < banned_selectors_size; s++) {
+            vm.assume(selector != banned_selectors[s]);
+        }
+        ...
+    }
 ```
-A similar situation with `ERC20Votes::delegateBySig`. We have a simple `ERC20Votes::delegate` that we can apply in all the same scenarios:
-```solidity
-function get_concrete_from_symbolic_optimized (...) 
-{
-    ...
-    // Not DamnValuableVotes::delegateBySig
-    vm.assume(selector != bytes4(keccak256("delegateBySig(address,uint256,uint256,uint8,bytes32,bytes32)")));
-    ...
-}
 ```
 ### Cut scenarios
 Let's try to cut down the scenarios in which we symbolically enter the same function several times. Now we can't select the same function twice inside `get_concrete_from_symbolic` in the path. At the same time, the overall coverage of the code will not decrease, we will still go through all scenarios where these functions are entered once:
@@ -281,7 +277,8 @@ contract GlobalStorage is Test, SymTest {
     ...
 }
 ```
-Another sacrifice of scenarios in exchange for avoiding duplication coverage can be achieved if you expand the number of symbolic transactions not in `attack()`, but in `onFlashLoan()` callback. This way we still process 2 symbolic transactions, but only if a **flashLoan** happened, which saves us a lot of resources:
+
+Until now, we have expanded the number of symbolic attacking transactions only in 'attack()'. But actually this is not the only place where it is possible. Since processing 2 symbolic transactions directly from `attack()` is quite difficult for Halmos, we could try adding another symbolic transaction inside the 'onFlashLoan()' callback instead. This way we still process 2 symbolic transactions, but only if a **flashLoan** happened. This greatly reduces the number of scenarios we cover, which saves us a lot of resources:
 ```solidity
 ...
 function execute_tx(string memory target_name) private {
@@ -298,25 +295,23 @@ function execute_tx(string memory target_name) private {
     ) external returns (bytes32) 
     {
         execute_tx("onFlashLoan_target1");
-        uint256 warp = svm.createUint256("onFlashLoan_warp");
-        vm.warp(block.timestamp + warp); // wait for symbolic time between transactions
         execute_tx("onFlashLoan_target2");
         DamnValuableVotes(token).approve(address(msg.sender), 2**256 - 1); // unlimited approve for pool
         return (keccak256("ERC3156FlashBorrower.onFlashLoan"));
     }
 ...
 function attack() public {
-    execute_tx();
+    execute_tx("attack_target");
     /*uint256 warp = svm.createUint256("warp");
     vm.warp(block.timestamp + warp); // wait for symbolic time between transactions
     execute_tx();*/
 }
 ```
-Yes, we have moved the `vm.warp()` from `attack()` to `onFlashLoan()` right in the middle of the transaction. Because we can! It may be risky because it can cause **false positives**. We hope this will not happen. This is the price of optimization heuristics.
+And for now, let's abandon the logic with warp, since in fact we have only one attacking symbolic transaction running, but let's keep in mind that it may be needed later.
 ### Invariants
 Until now, we used only invariants that somehow followed from the initial conditions of the problem. I suggest this time to go a much more creative way and come up with any scenarios that seem unexpected, unnatural or buggy. Yes, let's do the work for the imaginary developers of these contracts and cover them with tests :D.
 
-Let's start with token **allowance**. It is unexpectedly, that as a result of the **attacker's** actions, the **pool's** or **governance's** allowance may somehow change:
+Let's start with token **allowance**. It is unexpected, that as a result of the **attacker's** actions, the **pool's** or **governance's** allowance may somehow change:
 ```solidity
 function _isSolved() private view {
     ...
@@ -407,7 +402,7 @@ function onFlashLoan(address initiator, address token,
     else {
         execute_tx("onFlashLoan_target");
     }
-    DamnValuableVotes(token).approve(address(msg.sender), 2**256 - 1); // unlimited approve for pool
+    DamnValuableVotes(token).approve(address(msg.sender), type(uint256).max); // unlimited approve for pool
     return (keccak256("ERC3156FlashBorrower.onFlashLoan"));
 }
 
@@ -659,7 +654,7 @@ function createPayload(
     ++payloadsPushedCounter;
 }
 ```
-A bit like our Frankenstein from [Truster](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/truster#echidna), isn't it? Again, I draw your attention to the fact that only 2 functions that can be launched inside `executeAction` are considered here, and the function is already so huge. And the parameters of these functions are not abstract, but hardened. Against this background, the usability of Halmos is obvious.
+A bit like our Frankenstein from [Truster](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/truster#echidna), isn't it? Again, I draw your attention to the fact that only 2 functions that can be launched inside `executeAction` are considered here, and the function is already so huge. And the parameters of these functions are not abstract, but hard-coded. Against this background, the usability of Halmos is obvious.
 ### Call actions
 After the setup is complete, the fuzzer has the ability to run all these functions. 
 `receiveTokens` has functionality for this:

@@ -40,7 +40,7 @@ contract SymbolicAttacker is Test, SymTest {
         else {
             execute_tx("onFlashLoan_target");
         }
-        DamnValuableVotes(token).approve(address(msg.sender), 2**256 - 1); // unlimited approve for pool
+        DamnValuableVotes(token).approve(address(msg.sender), type(uint256).max); // unlimited approve for pool
         return (keccak256("ERC3156FlashBorrower.onFlashLoan"));
     }
 

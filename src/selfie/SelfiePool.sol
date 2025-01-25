@@ -76,7 +76,7 @@ contract SelfiePool is IERC3156FlashLender, ReentrancyGuard, Test {
         nonReentrant
         returns (bool)
     {
-        vm.assume(address(_receiver) == address(0xaaaa0006));
+        vm.assume(address(_receiver) == address(0xaaaa0006)); // SymbolicAttacker
         if (_token != address(token)) {
             revert UnsupportedCurrency();
         }
