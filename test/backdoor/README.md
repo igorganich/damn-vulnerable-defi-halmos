@@ -687,33 +687,7 @@ function createProxyWithCallback(...) public {
 }
 ...
 ```
-Therefore, the usual way of avoiding recursion by using `get_concrete_from_symbolic_optimized` is not suitable for us. Since `createProxyWithNonce` is called inside `createProxyWithCallback`, we can use the same approach as in [naive-receiver](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/selfie/test/naive-receiver#proxy-heuristics) and simply cut scenarios with a direct symbolic call to `createProxyWithNonce` without sacrificing overall code coverage. We will do this by implementing a new functionality to exclude entire functions from symbolic calls coverage in **GlobalStorage**. This also will help us to conveniently exclude `permit` and similar functions:
-```solidity
-contract GlobalStorage is Test, SymTest {
-    constructor() {
-        add_banned_function_selector(bytes4(keccak256("permit(address,address,uint256,uint256,uint8,bytes32,bytes32)")));
-        add_banned_function_selector(bytes4(keccak256("delegateBySig(address,uint256,uint256,uint8,bytes32,bytes32)")));
-    }
-    ...
-    mapping (uint256 => bytes4) banned_selectors;
-    uint256 banned_selectors_size = 0;
-
-    function add_banned_function_selector(bytes4 selector) public {
-        banned_selectors[banned_selectors_size] = selector;
-        banned_selectors_size++;
-    }
-    ...
-    function get_concrete_from_symbolic_optimized (address /*symbolic*/ addr) public 
-                                        returns (address ret, bytes memory data) 
-    {
-    ...
-        vm.assume(selector == bytes4(data));
-        for (uint256 s = 0; s < banned_selectors_size; s++) {
-            vm.assume(selector != banned_selectors[s]);
-        }
-        ...
-    }
-```
+Therefore, the usual way of avoiding recursion by using `get_concrete_from_symbolic_optimized` is not suitable for us. Since `createProxyWithNonce` is called inside `createProxyWithCallback`, we can use the same approach as in [naive-receiver](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/selfie/test/naive-receiver#proxy-heuristics) and simply cut scenarios with a direct symbolic call to `createProxyWithNonce` without sacrificing overall code coverage. We will do this by banning these functions through the already familiar `add_banned_function_selector()` from [selfie](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/selfie#solid-optimizations):
 ```solidity
 function setUp() public {
     ...
