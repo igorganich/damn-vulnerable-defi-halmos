@@ -7,12 +7,10 @@ import {IERC3156FlashLender} from "@openzeppelin/contracts/interfaces/IERC3156Fl
 import {IERC3156FlashBorrower} from "@openzeppelin/contracts/interfaces/IERC3156FlashBorrower.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {SimpleGovernance} from "./SimpleGovernance.sol";
-import "forge-std/Test.sol";
+import "lib/Cheats.sol";
 
-contract SelfiePool is IERC3156FlashLender, ReentrancyGuard {
+contract SelfiePool is IERC3156FlashLender, ReentrancyGuard, Cheats {
     bytes32 private constant CALLBACK_SUCCESS = keccak256("ERC3156FlashBorrower.onFlashLoan");
-
-    bool anti_recursion = false;
 
     IERC20 public immutable token;
     SimpleGovernance public immutable governance;
@@ -50,21 +48,16 @@ contract SelfiePool is IERC3156FlashLender, ReentrancyGuard {
         return 0;
     }
 
-    function flashLoan(IERC3156FlashBorrower _receiver, address _token, uint256 _amount, bytes calldata _data)
+    // save original flashLoan
+    /*function flashLoan(IERC3156FlashBorrower _receiver, address _token, uint256 _amount, bytes calldata _data)
         external
         nonReentrant
         returns (bool)
     {
-        console.log("flashloan");
-        if (anti_recursion == true)
-        {
-            revert();
-        }
-        anti_recursion = true;
         if (_token != address(token)) {
             revert UnsupportedCurrency();
         }
-        _receiver = IERC3156FlashBorrower(address(0x00000000000000000000000000000000000000000000000000000000aaaa0006));
+
         token.transfer(address(_receiver), _amount);
         if (_receiver.onFlashLoan(msg.sender, _token, _amount, 0, _data) != CALLBACK_SUCCESS) {
             revert CallbackFailed();
@@ -73,7 +66,29 @@ contract SelfiePool is IERC3156FlashLender, ReentrancyGuard {
         if (!token.transferFrom(address(_receiver), address(this), _amount)) {
             revert RepayFailed();
         }
-        anti_recursion = false;
+        return true;
+    }*/
+
+    // symbolic version
+
+    function flashLoan(IERC3156FlashBorrower _receiver, address _token, uint256 _amount, bytes calldata _data)
+        external
+        nonReentrant
+        returns (bool)
+    {
+        vm.assume(address(_receiver) == address(0xaaaa0006)); // SymbolicAttacker
+        if (_token != address(token)) {
+            revert UnsupportedCurrency();
+        }
+
+        token.transfer(address(_receiver), _amount);
+        if (_receiver.onFlashLoan(msg.sender, _token, _amount, 0, _data) != CALLBACK_SUCCESS) {
+            revert CallbackFailed();
+        }
+
+        if (!token.transferFrom(address(_receiver), address(this), _amount)) {
+            revert RepayFailed();
+        }
         return true;
     }
 
