@@ -5,9 +5,9 @@ pragma solidity =0.8.25;
 import {DamnValuableVotes} from "../DamnValuableVotes.sol";
 import {ISimpleGovernance} from "./ISimpleGovernance.sol";
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
-import {Test, console} from "forge-std/Test.sol";
+import "lib/Cheats.sol";
 
-contract SimpleGovernance is ISimpleGovernance, Test {
+contract SimpleGovernance is ISimpleGovernance, Cheats {
     using Address for address;
 
     uint256 private constant ACTION_DELAY_IN_SECONDS = 2 days;

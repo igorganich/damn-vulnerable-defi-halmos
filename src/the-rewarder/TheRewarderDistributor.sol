@@ -7,8 +7,8 @@ import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {MerkleProof} from "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
 import {BitMaps} from "@openzeppelin/contracts/utils/structs/BitMaps.sol";
-import "forge-std/Test.sol";
-import "halmos-cheatcodes/SymTest.sol";
+
+import "lib/Cheats.sol";
 
 struct Distribution {
     uint256 remaining;
@@ -27,7 +27,7 @@ struct Claim {
 /**
  * An efficient token distributor contract based on Merkle proofs and bitmaps
  */
-contract TheRewarderDistributor is Test, SymTest {
+contract TheRewarderDistributor is Cheats {
 
     Claim[] public storageInputClaims;
     IERC20[] public storageInputTokens;

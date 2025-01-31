@@ -93,8 +93,6 @@ contract NaiveReceiverChallenge is Test {
         console.log("NaiveReceiverPool\t", address(pool));
         console.log("FlashLoanReceiver\t", address(receiver));
         console.log("attacker\t\t", address(attacker));
-        console.log(weth.balanceOf(address(pool)));
-        console.log(weth.balanceOf(address(pool)) == 1000e18);
         attacker.attack();
     }
 

@@ -41,7 +41,7 @@ contract NaiveReceiverPool is Multicall, IERC3156FlashLender {
         return FIXED_FEE;
     }
 
-    // savee original function
+    // save original function
     /*
     function flashLoan(IERC3156FlashBorrower receiver, address token, uint256 amount, bytes calldata data)
         external
@@ -79,8 +79,6 @@ contract NaiveReceiverPool is Multicall, IERC3156FlashLender {
         weth.transfer(address(receiver), amount);
         totalDeposits -= amount;
 
-        //bytes memory newdata = svm.createBytes(100, "flashLoan_newdata");
-
         if (receiver.onFlashLoan(msg.sender, address(weth), amount, FIXED_FEE, data) != CALLBACK_SUCCESS) {
             revert CallbackFailed();
         }
@@ -95,7 +93,6 @@ contract NaiveReceiverPool is Multicall, IERC3156FlashLender {
     }
 
     function withdraw(uint256 amount, address payable receiver) external {
-        console.log("withdraw");
         // Reduce deposits
         deposits[_msgSender()] -= amount;
         totalDeposits -= amount;

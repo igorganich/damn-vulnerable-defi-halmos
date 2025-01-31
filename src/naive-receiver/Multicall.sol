@@ -6,7 +6,7 @@ import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {Context} from "@openzeppelin/contracts/utils/Context.sol";
 import "lib/GlobalStorage.sol";
 
-abstract contract Multicall is Context, Test, SymTest {
+abstract contract Multicall is Context, Cheats {
 
     GlobalStorage glob = GlobalStorage(address(0xaaaa0002));
 
@@ -26,7 +26,6 @@ abstract contract Multicall is Context, Test, SymTest {
         results = new bytes[](1);
         address target = address(this);
         bytes memory newdata = svm.createCalldata("NaiveReceiverPool");
-        //bytes memory newdata = svm.createBytes(10000, "multicall_newdata");
         bytes4 selector = svm.createBytes4("selector");
         vm.assume (bytes4(newdata) == selector);
         // avoid recursion

@@ -2,7 +2,7 @@
 ## Halmos version
 halmos 0.2.1.dev19+g4e82a90 was used in this article
 ## Foreword
-It is strongly assumed that the reader is familiar with the previous articles on solving ["Unstoppable"](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/unstoppable), and ["Truster"](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/truster), since the main ideas here are largely repeated and we will not dwell on them again.
+It is strongly assumed that the reader is familiar with the previous articles on solving ["Unstoppable"](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/unstoppable) and ["Truster"](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/truster), since the main ideas here are largely repeated and we will not dwell on them again.
 ## Preparation
 ### Common prerequisites
 1. Copy NaiveReceiver.t.sol file to NaiveReceiverHalmos.t.sol. We will work in this file.
@@ -19,7 +19,7 @@ It is strongly assumed that the reader is familiar with the previous articles on
         player = address(0xcafe0001);
         ...
     ```
-4. **vm.getNonce()** is unsupportable cheat-code. Delete it in **_isSolved()** function.
+4. **vm.getNonce()** is an unsupported cheat-code. Delete it in **_isSolved()** function.
 5. Create **GlobalStorage** contract and save all address-name pairs:
     ```solidity
     ...
@@ -259,8 +259,32 @@ $ halmos --solver-timeout-assertion 0 --function check_naiveReceiver --loop 4
 ...
 Killed
 ```
-Catastrophe! An hour later, Halmos simply collapsed due to out-of-memory. This is a known problem of symbolic analysis: [Path Explosion](https://en.wikipedia.org/wiki/Path_explosion). Halmos could not handle the symbolic execution of 2 transactions in a setup with such 4 contracts. Here we have reached the Halmos limit, and it will not be possible to solve this problem so straightforwardly. We will have to introduce some optimizations.
+Catastrophe! An hour later, Halmos simply collapsed due to out-of-memory. This is a known problem of symbolic analysis: [Path Explosion](https://en.wikipedia.org/wiki/Path_explosion). Halmos could not handle the symbolic execution of 2 transactions in a setup with such 4 contracts.
 ## Optimizations
+Here we have reached the Halmos limit, and it will not be possible to solve this problem so straightforwardly. We will have to introduce some optimizations.
+### Cheats
+Smart contract optimizations, which will be described below, require the use of Foundry cheat codes (from **Test**) and Halmos itself (from **SymTest**). Of course, we could just add inheritance from these smart contracts and it would work fine. But this will significantly change the bytecode of target smart contracts and there is a small risk of unwanted side effects. Therefore, to minimize the potential impact of optimizations on the behavior of target smart contracts, let's create the following abstract contract in `lib/Cheats.sol`:
+```solidity
+import "forge-std/Test.sol";
+import "./halmos-cheatcodes/src/SymTest.sol";
+
+abstract contract Cheats {
+    Vm internal constant vm = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
+    SVM internal constant svm = SVM(address(uint160(uint256(keccak256("svm cheat code")))));
+}
+```
+And we make inheritance from Cheats:
+```solidity
+contract BasicForwarder is EIP712, Cheats {
+    ...
+}
+```
+```solidity
+abstract contract Multicall is Context, Cheats {
+    ...
+}
+```
+### onFlashLoan
 First, let's look at **FlashLoanReceiver::onFlashLoan**:
 ```solidity
 contract FlashLoanReceiver is IERC3156FlashBorrower {
@@ -300,6 +324,7 @@ function flashLoan(IERC3156FlashBorrower receiver, address token, uint256 amount
     ...
 }
 ```
+### _checkRequest
 The next optimization is related to **BasicForwarder::_checkRequest**:
 ```solidity
 function _checkRequest(Request calldata request, bytes calldata signature) private view {
@@ -319,6 +344,7 @@ function execute(Request calldata request, bytes calldata signature) public paya
     target.call(payload);
 }
 ```
+### Cryptographic checks
 Next to it, there is a cryptographic check of the signature in **_checkRequest**:
 ```solidity
 function _checkRequest(Request calldata request, bytes calldata signature) private view {
@@ -345,12 +371,9 @@ killed
 ```
 No, it's still too hard. 
 
-Before continuing, it is worth noting that we could go further in this direction and there is still space for optimizations from the environment settings and Halmos itself. For example,
-1. Reduce parallelism (using a lower value for `--solver-threads N` Halmos option).
-2. Since the standard `z3` solver is quite greedy in terms of resources, we can use a different solver, e.g. `--solver-command yices-smt2`.
-3. Use a cloud machine with more memory.
+### Small update
+In newer versions of Halmos, the problem with the linear growth of memory and, as a result, out-of-memory crash has been fixed. Now this test takes a VERY LONG time to run, but at least it can finish running. However, it still cannot find a counterexample.
 
-But since less brutal ways of solving resource problems are already suggested, we will try to use some heuristics.
 ## Heuristics
 We have reached the point where we can no longer operate with only stable improvements and expect Halmos to give us a solution to the problem in such a clear form as in past challenges. Will have to try to apply some relief by sacrificing likely scenarios that could be covered symbolically.
 ### Proxy heuristics

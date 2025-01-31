@@ -2,10 +2,9 @@
 
 pragma solidity =0.8.25;
 
-import "./halmos-cheatcodes/src/SymTest.sol";
-import {Test, console} from "forge-std/Test.sol";
+import "./Cheats.sol";
 
-contract GlobalStorage is Test, SymTest {
+contract GlobalStorage is Cheats {
     constructor() {
         add_banned_function_selector(bytes4(keccak256("permit(address,address,uint256,uint256,uint8,bytes32,bytes32)")));
         add_banned_function_selector(bytes4(keccak256("delegateBySig(address,uint256,uint256,uint8,bytes32,bytes32)")));

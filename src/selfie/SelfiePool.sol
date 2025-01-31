@@ -7,9 +7,9 @@ import {IERC3156FlashLender} from "@openzeppelin/contracts/interfaces/IERC3156Fl
 import {IERC3156FlashBorrower} from "@openzeppelin/contracts/interfaces/IERC3156FlashBorrower.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {SimpleGovernance} from "./SimpleGovernance.sol";
-import {Test, console} from "forge-std/Test.sol";
+import "lib/Cheats.sol";
 
-contract SelfiePool is IERC3156FlashLender, ReentrancyGuard, Test {
+contract SelfiePool is IERC3156FlashLender, ReentrancyGuard, Cheats {
     bytes32 private constant CALLBACK_SUCCESS = keccak256("ERC3156FlashBorrower.onFlashLoan");
 
     IERC20 public immutable token;

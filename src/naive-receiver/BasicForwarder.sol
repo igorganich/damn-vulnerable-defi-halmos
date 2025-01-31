@@ -13,7 +13,7 @@ interface IHasTrustedForwarder {
     function trustedForwarder() external view returns (address);
 }
 
-contract BasicForwarder is EIP712, Test, SymTest {
+contract BasicForwarder is EIP712, Cheats {
     GlobalStorage glob = GlobalStorage(address(0xaaaa0002));
     struct Request {
         address from;
