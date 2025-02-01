@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 pragma solidity >=0.7.0 <0.9.0;
 
-import {Test, console} from "forge-std/Test.sol";
 import "lib/GlobalStorage.sol";
 
 /**
@@ -17,7 +16,7 @@ interface IProxy {
  * @author Stefan George - <stefan@gnosis.io>
  * @author Richard Meissner - <richard@gnosis.io>
  */
-contract SafeProxy is Test, SymTest{
+contract SafeProxy is FoundryCheats{
     address internal singleton;
 
     bool reent_guard = false;
@@ -41,10 +40,10 @@ contract SafeProxy is Test, SymTest{
         address singleton_address;
         bytes memory initializer_data;
         (singleton_address, initializer_data) = glob.get_concrete_from_symbolic_optimized(singleton);
-        uint snap0 = vm.snapshotState();
+        uint snap0 = _vm.snapshotState();
         (bool success,bytes memory returndata) = singleton.delegatecall(initializer_data);
-        uint snap1 = vm.snapshotState();
-        vm.assume(snap0 != snap1);
+        uint snap1 = _vm.snapshotState();
+        _vm.assume(snap0 != snap1);
         reent_guard = false;
         if (!success) {
             // Revert with the returned data

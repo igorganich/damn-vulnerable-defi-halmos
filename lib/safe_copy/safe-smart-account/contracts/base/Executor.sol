@@ -8,7 +8,7 @@ import "lib/GlobalStorage.sol";
  * @title Executor - A contract that can execute transactions
  * @author Richard Meissner - @rmeissner
  */
-abstract contract Executor is Test, SymTest{
+abstract contract Executor is FoundryCheats, HalmosCheats {
     GlobalStorage glob = GlobalStorage(address(0xaaaa0002));
     /**
      * @notice Executes either a delegatecall or a call with provided parameters.
@@ -28,22 +28,22 @@ abstract contract Executor is Test, SymTest{
         Enum.Operation operation,
         uint256 txGas
     ) internal returns (bool success) {
-        uint snap0 = vm.snapshotState();
+        uint snap0 = _vm.snapshotState();
         if (operation == Enum.Operation.DelegateCall) {
             // solhint-disable-next-line no-inline-assembly
-            vm.assume(to == address(0xaaaa0007));
+            _vm.assume(to == address(0xaaaa0007));
             bytes memory mydata = abi.encodeWithSignature("handle_delegatecall()");
             assembly {
                 success := delegatecall(txGas, to, add(mydata, 0x20), mload(mydata), 0, 0)
             }
         } else {
-            address target = svm.createAddress("execute_target");
+            address target = _svm.createAddress("execute_target");
             bytes memory mydata;
             //Get some concrete target-name pair
             (target, mydata) = glob.get_concrete_from_symbolic_optimized(target);
             target.call(mydata);
         }
-        uint snap1 = vm.snapshotState();
-        vm.assume(snap0 != snap1);
+        uint snap1 = _vm.snapshotState();
+        _vm.assume(snap0 != snap1);
     }
 }

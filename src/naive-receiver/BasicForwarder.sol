@@ -13,7 +13,7 @@ interface IHasTrustedForwarder {
     function trustedForwarder() external view returns (address);
 }
 
-contract BasicForwarder is EIP712, Cheats {
+contract BasicForwarder is EIP712, FoundryCheats, HalmosCheats {
     GlobalStorage glob = GlobalStorage(address(0xaaaa0002));
     struct Request {
         address from;
@@ -87,7 +87,7 @@ contract BasicForwarder is EIP712, Cheats {
 // Symbolic execute
     function execute(Request calldata request, bytes calldata signature) public payable returns (bool success) {
 
-        vm.assume(request.from == address(0xcafe0001));
+        _vm.assume(request.from == address(0xcafe0001));
         nonces[request.from]++;
 
         uint256 gasLeft;
@@ -95,10 +95,10 @@ contract BasicForwarder is EIP712, Cheats {
         address target = request.target;
         uint256 forwardGas = request.gas;
         // Work with "newdata" like this is the "data"
-        bytes memory newdata = svm.createCalldata("NaiveReceiverPool");
+        bytes memory newdata = _svm.createCalldata("NaiveReceiverPool");
         bytes memory payload = abi.encodePacked(newdata, request.from);
-        vm.assume(target == address(0xaaaa0005));
-        vm.assume(bytes4(newdata) == bytes4(keccak256("multicall(bytes[])")));
+        _vm.assume(target == address(0xaaaa0005));
+        _vm.assume(bytes4(newdata) == bytes4(keccak256("multicall(bytes[])")));
         target.call(payload);
     }
 

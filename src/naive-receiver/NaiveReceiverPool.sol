@@ -72,7 +72,7 @@ contract NaiveReceiverPool is Multicall, IERC3156FlashLender {
         external
         returns (bool)
     {
-        vm.assume (address(receiver) == address(0xaaaa0006));
+        _vm.assume (address(receiver) == address(0xaaaa0006));
         if (token != address(weth)) revert UnsupportedCurrency();
 
         // Transfer WETH and handle control to receiver

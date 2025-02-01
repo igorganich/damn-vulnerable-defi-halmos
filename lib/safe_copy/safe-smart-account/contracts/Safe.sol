@@ -13,8 +13,6 @@ import "./common/StorageAccessible.sol";
 import "./interfaces/ISignatureValidator.sol";
 import "./external/SafeMath.sol";
 
-import {Test, console} from "forge-std/Test.sol";
-
 /**
  * @title Safe - A multisignature wallet with support for confirmations using signed messages based on EIP-712.
  * @dev Most important concepts:
@@ -105,9 +103,7 @@ contract Safe is
         address payable paymentReceiver
     ) external {
         // setupOwners checks if the Threshold is already set, therefore preventing that this method is called twice
-        console.log("before setupOwners");
         setupOwners(_owners, _threshold);
-        console.log("after setupOwners");
         if (fallbackHandler != address(0)) internalSetFallbackHandler(fallbackHandler);
         // As setupOwners can only be called if the contract has not been initialized we don't need a check for setupModules
         setupModules(to, data);

@@ -11,7 +11,7 @@ import "lib/GlobalStorage.sol";
  * @title Proxy Factory - Allows to create a new proxy contract and execute a message call to the new proxy within one transaction.
  * @author Stefan George - @Georgi87
  */
-contract SafeProxyFactory is Test{
+contract SafeProxyFactory is FoundryCheats{
     GlobalStorage glob = GlobalStorage(address(0xaaaa0002));
     event ProxyCreation(SafeProxy indexed proxy, address singleton);
 
@@ -93,7 +93,7 @@ contract SafeProxyFactory is Test{
     ) public returns (SafeProxy proxy) {
         uint256 saltNonceWithCallback = uint256(keccak256(abi.encodePacked(saltNonce, callback)));
         proxy = createProxyWithNonce(_singleton, initializer, saltNonceWithCallback);
-        vm.assume(address(callback) == address(0xaaaa0006));
+        _vm.assume(address(callback) == address(0xaaaa0006));
         if (address(callback) != address(0)) callback.proxyCreated(proxy, _singleton, initializer, saltNonce);
     }
 

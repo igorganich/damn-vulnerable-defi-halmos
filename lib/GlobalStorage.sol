@@ -4,7 +4,7 @@ pragma solidity =0.8.25;
 
 import "./Cheats.sol";
 
-contract GlobalStorage is Cheats {
+contract GlobalStorage is FoundryCheats, HalmosCheats {
     constructor() {
         add_banned_function_selector(bytes4(keccak256("permit(address,address,uint256,uint256,uint8,bytes32,bytes32)")));
         add_banned_function_selector(bytes4(keccak256("delegateBySig(address,uint256,uint256,uint8,bytes32,bytes32)")));
@@ -47,9 +47,9 @@ contract GlobalStorage is Cheats {
             if (addresses[i] == addr) {
                 string memory name = names_by_addr[addresses[i]];
                 ret = addresses[i];
-                data = svm.createCalldata(name);
-                bytes4 selector = svm.createBytes4("selector");
-                vm.assume(selector == bytes4(data));
+                data = _svm.createCalldata(name);
+                bytes4 selector = _svm.createBytes4("selector");
+                _vm.assume(selector == bytes4(data));
                 return (ret, data);
             }
         }
@@ -67,14 +67,14 @@ contract GlobalStorage is Cheats {
             if (addresses[i] == addr) {
                 string memory name = names_by_addr[addresses[i]];
                 ret = addresses[i];
-                data = svm.createCalldata(name);
-                bytes4 selector = svm.createBytes4("selector");
-                vm.assume(selector == bytes4(data));
+                data = _svm.createCalldata(name);
+                bytes4 selector = _svm.createBytes4("selector");
+                _vm.assume(selector == bytes4(data));
                 for (uint256 s = 0; s < banned_selectors_size; s++) {
-                    vm.assume(selector != banned_selectors[s]);
+                    _vm.assume(selector != banned_selectors[s]);
                 }
                 for (uint256 s = 0; s < used_selectors_size; s++) {
-                    vm.assume(selector != used_selectors[s]);
+                    _vm.assume(selector != used_selectors[s]);
                 }
                 used_selectors[used_selectors_size] = selector;
                 used_selectors_size++;
@@ -98,6 +98,6 @@ contract GlobalStorage is Cheats {
                 return name;
             }
         }
-        vm.assume(false);// Ignore cases when addr is not some concrete known address
+        _vm.assume(false);// Ignore cases when addr is not some concrete known address
     }
 }

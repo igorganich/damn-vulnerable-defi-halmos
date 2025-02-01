@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 pragma solidity >=0.7.0 <0.9.0;
 
-import "forge-std/Test.sol";
+import "lib/Cheats.sol";
 
 /**
  * @title StorageAccessible - A generic base contract that allows callers to access all internal storage.
@@ -9,7 +9,7 @@ import "forge-std/Test.sol";
  *         It removes a method from the original contract not needed for the Safe contracts.
  * @author Gnosis Developers
  */
-abstract contract StorageAccessible is Test {
+abstract contract StorageAccessible is FoundryCheats {
     /**
      * @notice Reads `length` bytes of storage in the currents contract
      * @param offset - the offset in the current contract's storage in words to start reading from
@@ -40,8 +40,8 @@ abstract contract StorageAccessible is Test {
      * @param calldataPayload Calldata that should be sent to the target contract (encoded method name and arguments).
      */
     function simulateAndRevert(address targetContract, bytes memory calldataPayload) external {
-        vm.assume(targetContract == address(0xaaaa0007));
-        vm.assume(bytes4(calldataPayload) == bytes4(keccak256("handle_delegatecall()")));
+        _vm.assume(targetContract == address(0xaaaa0007));
+        _vm.assume(bytes4(calldataPayload) == bytes4(keccak256("handle_delegatecall()")));
         // solhint-disable-next-line no-inline-assembly
         assembly {
             let success := delegatecall(gas(), targetContract, add(calldataPayload, 0x20), mload(calldataPayload), 0, 0)
