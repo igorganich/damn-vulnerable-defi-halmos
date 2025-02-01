@@ -13,6 +13,8 @@ It is strongly assumed that the reader is familiar with the previous articles on
 since the main ideas here are largely repeated and we will not dwell on them again.
 
 It is also worth noting that this article is probably the most overloaded with complex but very valuable information in the whole series. The number of issues that will have to be solved within the framework of this task is really unusually large. Therefore, for a better perception of information, I highly recommend updating your knowledge of the "usual" solution to **backdoor** and the logic of the relevant contracts.
+
+One last thing: there will be a lot of changes to the **safe-smart-account** library contracts in this challenge.  For convenience, the "symbolic" version of **safe-smart-account** is placed separately, in `lib/safe_copy`
 ## Preparation
 ### Common prerequisites
 1. Copy **Backdoor.t.sol** file to **BackdoorHalmos.t.sol**.
@@ -141,7 +143,7 @@ function simulateAndRevert(address targetContract, bytes memory calldataPayload)
     }
 }
 ```
-We will handle the `delegatecall` of a symbolic target quite simply: цe will specify our **SymbolicAttacker** as the only target, and the only function should be some `handle_delegatecall()` callback, in which we will symbolically iterate through the functions using the familiar method:
+We will handle the `delegatecall` of a symbolic target quite simply: we will specify our **SymbolicAttacker** as the only target, and the only function should be some `handle_delegatecall()` callback, in which we will symbolically iterate through the functions using the familiar method:
 ```solidity
 contract SymbolicAttacker is Test, SymTest {
 ...
@@ -154,7 +156,7 @@ contract SymbolicAttacker is Test, SymTest {
 ```solidity
 ...
 function simulateAndRevert(address targetContract, bytes memory calldataPayload) external {
-    vm.assume(targetContract == address(0xaaaa0007));
+    vm.assume(targetContract == address(0xaaaa0007)); // SymbolicAttacker
     vm.assume(bytes4(calldataPayload) == bytes4(keccak256("handle_delegatecall()")));
     assembly {
         let success := delegatecall(gas(), targetContract, add(calldataPayload, 0x20), mload(calldataPayload), 0, 0)
@@ -406,6 +408,8 @@ bytes memory signatures
 ```
 Let's handle this as we do with other cryptographic checks: we simply remove this logic, assuming that the data was entered correctly.
 ### OwnerIsNotABeneficiary issue
+Before considering this problem, it is worth clarifying that it is relevant for relatively weak PCs. As practice shows, the same test on a powerful PC with a better CPU does not show this problem. Looking ahead, the problem is related to the complexity of solving computational problems and, as a result, the unstable behavior of Halmos in such cases.
+
 Let's try running the test now:
 ```javascript
 $ halmos --solver-timeout-assertion 0 --function check_backdoor --loop 100
@@ -543,11 +547,24 @@ function getOwners() public view returns (address[] memory) {
     return array;
 }
 ```
-Some clever algorithm is used, which allows you to store owners' addresses in the mapping, and then craft an array based on it. The problem is that Halmos does not handle cases when the mapping index is some symbolic value:
+Some clever algorithm is used, which allows you to store owners' addresses in the mapping, and then craft an array based on it. 
+The problem is that such a complex assignment of values ​​to a map by symbolic key creates a greater load on the **solver** when forming an `array`. It does not manage in the allotted time, goes to timeout, and the array gets `0x0` instead of some valid value (at least symbolic):
 ```solidity
+function setupOwners(address[] memory _owners, uint256 _threshold) internal {
 owners[currentOwner] = owner;
 ...
 owners[currentOwner] = SENTINEL_OWNERS;
+...
+}
+function getOwners() public view returns (address[] memory) {
+...
+    while (currentOwner != SENTINEL_OWNERS) {
+        array[index] = currentOwner;
+        currentOwner = owners[currentOwner];
+        index++;
+    }
+...
+}
 ```
 It is, in fact, difficult to catch such Halmos behavior or even understand that something is wrong. 
 
