@@ -551,10 +551,14 @@ Some clever algorithm is used, which allows you to store owners' addresses in th
 The problem is that such a complex assignment of values ​​to a map by symbolic key creates a greater load on the **solver** when forming an `array`. It does not manage in the allotted time, goes to timeout, and the array gets `0x0` instead of some valid value (at least symbolic):
 ```solidity
 function setupOwners(address[] memory _owners, uint256 _threshold) internal {
-owners[currentOwner] = owner;
-...
-owners[currentOwner] = SENTINEL_OWNERS;
-...
+    for (uint256 i = 0; i < _owners.length; i++) {
+        address owner = _owners[i];
+        ...
+        owners[currentOwner] = owner;
+        currentOwner = owner;
+    }
+    owners[currentOwner] = SENTINEL_OWNERS;
+    ...
 }
 function getOwners() public view returns (address[] memory) {
 ...
@@ -568,7 +572,8 @@ function getOwners() public view returns (address[] memory) {
 ```
 It is, in fact, difficult to catch such Halmos behavior or even understand that something is wrong. 
 
-Okay, let's fix it somehow. For this particular case, I propose to abandon this algorithm through mapping, and use a regular array, assuming that there are no more than 2 owners (the largest size of a dynamic array considered by Halmos by default):
+Okay, let's fix it somehow. For this particular case, I propose to abandon this algorithm through mapping, and use a regular array, assuming that there are no more than 2 owners (the largest size of a dynamic array considered by Halmos by default). 
+Such a "direct" algorithm stores data in a simpler form and it is easier for Halmos to understand that `owner` should be a symbolic value:
 ```solidity
 ...
 mapping(address => address) internal owners;
@@ -599,9 +604,9 @@ $ halmos --solver-timeout-assertion 0 --function check_backdoor --loop 100
 [console.log] Concat(0x000000000000000000000000, Extract(p__owners[0]_address_c7821fc_58()))
 ...
 ```
-So much better! The code below is now unlocked as Halmos can now see the scenario where `owner` is, for example **Alice** with address `0xcafe0003`.
+So much better! The code below is now unlocked as Halmos can see the scenario where `owner` is, for example **Alice** with address `0xcafe0003`.
 ### solver-timeout-branching halmos option
-Now let's move on to an important `--solver-timeout-branching` parameter of Halmos. If you examine several different logs with full traces of all paths that were made in different runs, you can see that they differ a lot. Halmos starts to run erratically, especially if the working machine is overloaded: entire functions have been ignored. This is a clear sign that the solver does not cope with **branching**. Simply put: every time Halmos encounters a branching statement (for example `if()`), it runs a solver that determines whether the statement is **true** or **false**. And, unfortunately, sometimes the solver cannot calculate it quickly (especially in such complex setups with an overloaded number of symbolic variables). Because of this, it does not fit into the timeout allocated to it, and branching does not occur in a correct way. 
+Now let's move on to an important `--solver-timeout-branching` parameter of Halmos. `OwnerIsNotABeneficiary` is not the only place in this challenge where the solver can behave unstable (even on a powerful CPU). If you examine several different logs with full traces of all paths that were made in different runs, you can see that they differ a lot. Halmos starts to run erratically, especially if the working machine is overloaded: entire functions have been ignored. This is a clear sign that the solver does not cope with **branching**. Simply put: every time Halmos encounters a branching statement (for example `if()`), it runs a solver that determines whether the statement is **true** or **false**. And, unfortunately, sometimes the solver cannot calculate it quickly (especially in such complex setups with an overloaded number of symbolic variables). Because of this, it does not fit into the timeout allocated to it (1 ms is default timeout), and branching does not occur in a correct way. 
 
 The solution is actually quite simple, but expensive. We simply add another startup parameter:
 ```javascript
@@ -609,8 +614,10 @@ The solution is actually quite simple, but expensive. We simply add another star
 ```
 This completely removes the timeout for the branching solver.
 
-However, on the other hand, the speed of operations has significantly decreased. From `~29000` operations per second, the speed dropped to `~8000` on my machine.
-## create2 during test
+However, on the other hand, the speed of operations has significantly decreased. From `~29000` operations per second, the speed dropped to `~8000` on my machine. That is why a more correct solution would be to calibrate the timeout value for your working machine, which will allow Halmos to work stably from run to run, while not significantly slowing down the speed of operations.
+
+But I will use `0` as an expensive but stable solution to demonstrate the capabilities of Halmos.
+### create2 during test
 In this challenge, we have a unique feature: the logic of the test is based on the fact that new contracts will be created during the test.
 ```soliidty
 function deployProxy(address _singleton, bytes memory initializer, bytes32 salt) internal returns (SafeProxy proxy) {
