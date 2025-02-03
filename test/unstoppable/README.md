@@ -246,7 +246,8 @@ contract Attacker is Test, SymTest {
 ```
 This is an exact copy of **SymbolicAttacker**, except we've replaced the symbolic values with concrete values ​​from the counterexample. 
 And of course, we replaced the addresses from Halmos with Foundry addresses.
-And test_unstoppable():
+
+And `test_unstoppable()`:
 ```solidity
 function test_unstoppable() public checkSolvedByPlayer {
         Attacker attacker = new Attacker();
@@ -269,7 +270,7 @@ Success! The challenge "Unstoppable" is solved successfully using Halmos symboli
 ## And what about fuzzing?
 At the time of writing, [Echidna-driven](https://github.com/crytic/damn-vulnerable-defi-echidna/blob/solutions/contracts/unstoppable/UnstoppableEchidna.sol) solution by **Crytic team** and [Foundry-driven](https://github.com/devdacian/solidity-fuzzing-comparison/blob/main/test/02-unstoppable/UnstoppableBasicFoundry.t.sol) solution by **devdacian** can be found on the Internet. However, these solutions were made for older versions of "Unstoppable". The current version needs to check other invariants, so we will work with a modernized solution. Of course, I chose invariant-driven Foundry as my fuzzing engine since the current version of Damn-Vulnerable-Defi was completely rewritten on Foundry. 
 ### Invariant
-The invariant is obvious - I just took the code of the **_isSolved()** function from **Unstoppable_Halmos.t.sol** and used it:
+The invariant is obvious - I just took the code of the `_isSolved()` function from **Unstoppable_Halmos.t.sol** and used it:
 ```solidity
 function invariant_check_flash_loan() public {
     vm.prank(deployer);
