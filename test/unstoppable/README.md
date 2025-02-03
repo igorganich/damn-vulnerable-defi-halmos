@@ -181,7 +181,7 @@ halmos_target_address_cc8b1e9_03 = 0x00000000000000000000000000000000aaaa0005
 halmos_target_address_d348a8b_05 = 0x00000000000000000000000000000000aaaa0002
 halmos_target_address_dc9e083_01 = 0x00000000000000000000000000000000aaaa0005
 ```
-Given that we already know that **0x0...aaaa0005** is the attacker's address, it is easy to guess that we are dealing with recursion. Attacker calls its own `attack()` function and thus inflates the analysis with spurious counterexamples. Fixing this is quite simple - just use the vm.assume() cheat code when creating a symbolic address:
+Given that we already know that **0x0...aaaa0005** is the attacker's address, it is easy to guess that we are dealing with recursion. Attacker calls its own `attack()` function and thus inflates the analysis with spurious counterexamples. Fixing this is quite simple - just use the `vm.assume()` cheatcode when creating a symbolic address:
 ```solidity
 function attack() public {
         address target = svm.createAddress("target");
