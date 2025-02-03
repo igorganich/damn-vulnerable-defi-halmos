@@ -2,13 +2,13 @@
 ## Halmos version
 **halmos 0.2.1.dev16+g1502e46** was used in this article
 ## Idea overview
-Let's imagine that we don't know how to solve this challenge. The only things we know are the code of contracts, pre-written "setUp()" function, final state we must achieve and the "test_unstoppable()" function, where we should write our solution.
+Let's imagine that we don't know how to solve this challenge. The only things we know are the code of contracts, pre-written `setUp()` function, final state we must achieve and the `test_unstoppable()` function, where we should write our solution.
 The idea is:
-1. Create some "SymbolicAttacker" contract, controlled by player and give it all necessary resources (DamnValuableToken supply).
+1. Create some **SymbolicAttacker** contract, controlled by `player` and give it all necessary resources (**DamnValuableToken** supply).
 
-2. SymbolicAttacker should be able to symbolically execute all known contracts with all possible parameters to find necessary state.
+2. **SymbolicAttacker** should be able to symbolically execute all known contracts with all possible parameters to find necessary state.
 
-3. In "_isSolved()" function, write an assert opposite to the existing one. That means, if there is:
+3. In `_isSolved()` function, write an `assert` opposite to the existing one. That means, if there is:
     ```solidity
     assertTrue(*Some condition*);
     ```
@@ -16,22 +16,22 @@ The idea is:
     ```solidity
     assertFalse(*Some condition*);
     ```
-    so Halmos will find a counterexample where this condition is true. This will be our solution for the challenge.
+    so Halmos will find a counterexample where this condition is **true**. This will be our solution for the challenge.
 
 4. Paste this counterexample into the initial code and execute **forge test**.
 
 5. **forge test** should be passed.
 ## Common prerequisites
-1. Copy Unstoppable.t.sol file to Unstoppable_Halmos.t.sol. All Halmos-related changes should be done here.
+1. Copy **Unstoppable.t.sol** file to **Unstoppable_Halmos.t.sol**. All Halmos-related changes should be done here.
 
 2. Since Halmos doesn't support 
-    ```
+    ```solidity
     vm.expectEmit()
     ```
     cheatcode, we simply delete this code.
 
-3. Rename **"test_unstoppable()"** to **"check_unstoppable()"**, so Halmos will execute this test symbolically.
-4. We should avoid using the makeAddr() cheatcode, because Halmos treats such addresses as symbolic, leading to incorrect counterexamples. Simply put, Halmos can assume that the deployer and the player have the same addresses (is the same person), which destroys the very essence of the challenge. So we have to replace makeAddr() with specific hardcoded values:
+3. Rename `test_unstoppable()` to `check_unstoppable()`, so Halmos will execute this test symbolically.
+4. We should avoid using the `makeAddr()` cheatcode, because Halmos treats such addresses as symbolic, leading to incorrect counterexamples. Simply put, Halmos can assume that the `deployer` and the `player` have the same addresses (is the same person), which destroys the very essence of the challenge. So we have to replace `makeAddr()` with specific hardcoded values:
     ```solidity
     address deployer = makeAddr("deployer");
     address player = makeAddr("player");
@@ -41,14 +41,12 @@ The idea is:
     address deployer = address(0xcafe0000);
     address player = address(0xcafe0001);
     ```
-5. Halmos execution should be done without timeout assertion:
+5. Halmos execution should be done without assertion timeout:
     ```
     halmos <...> --solver-timeout-assertion 0
     ```
-
-
 ## Deploying SymbolicAttacker contract
-So, let's write our "check_unstoppable()" function:
+So, let's write our `check_unstoppable()` function:
 ```solidity
 function  check_unstoppable() public  checkSolvedByPlayer {
     SymbolicAttacker attacker =  new SymbolicAttacker(); // Deploy attacker contract
@@ -71,7 +69,7 @@ import "forge-std/Test.sol";
 Since the basis of our idea is the symbolic execution of some transaction, which, as we assume, leads to a bug, the implementation of the attacking function looks like this:
 ```solidity
 contract SymbolicAttacker is Test, SymTest {
-	function attack() public {
+    function attack() public {
         address target = svm.createAddress("target");
         bytes memory data = svm.createBytes(100, 'data');
         target.call(data);
@@ -88,14 +86,13 @@ Let's break down the attack() function line by line:
     bytes memory data = svm.createBytes(100, 'data');
     ```
 3. Finally, we got to the place where all the magic happens:
-If you make a call to the symbolic address, Halmos will automatically process all known contracts by brute force. In this case, these are **DamnValuableToken**, **UnstoppableVault**, **UnstoppableMonitor** and, unexpectedly, **SymbolicAttacker** himself (we'll come back to this later). 
-    Accordingly, the symbolic calldata **data** will also be bruteforced as all possible entry points of contracts with corresponding symbolic parameters.
+If you make a call to the symbolic address, Halmos will automatically process all known contracts by brute force. In this case, these are **DamnValuableToken**, **UnstoppableVault**, **UnstoppableMonitor** and, unexpectedly, **SymbolicAttacker** himself (we'll come back to this later). Accordingly, the symbolic calldata **data** will also be bruteforced as all possible entry points of contracts with corresponding symbolic parameters.
     ```solidity
     target.call(data);
     ```
 
 ## _isSolved() implementation and counterexample
-This function is a check function that is executed immediately after “check_unstoppable()”. The attacker has finished its work, so it's time to check the state and create a counterexample.
+This function is a check function that is executed immediately after `check_unstoppable()`. `attacker` has finished its work, so it's time to check the state and create a counterexample.
 The original checks look like:
 ```solidity
 function  _isSolved() private {
@@ -167,7 +164,7 @@ Now we have address information. Let's briefly look at the first counterexample:
 halmos_data_bytes_2658b5c_02 = 0xa9059cbb00000000000000000000000000000000000000000000000000000000aaaa0003000000000000000000000000000000000000000000000000743133125f0000010000000000000000000000000000000000000000000000000000000000000000
 halmos_target_address_dc9e083_01 = 0x00000000000000000000000000000000aaaa0002    
 ```
-Here the attacker executed some transaction on the token contract, which led to the bug. Before studying it in more depth, it is necessary to consider other counterexamples:
+Here the `attacker` executed some transaction on the `token` contract, which led to the bug. Before studying it in more depth, it is necessary to consider other counterexamples:
 ```solidity
 halmos_data_bytes_2658b5c_02 = 0x9e5faafc000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 halmos_data_bytes_8a799d8_04 = 0xa9059cbb00000000000000000000000000000000000000000000000000000000aaaa00030000000000000000000000000000000000000000000000007f3ffce4e8f1c0000000000000000000000000000000000000000000000000000000000000000000
@@ -195,7 +192,7 @@ Now we've gotten rid of the recursive counterexamples and have only meaningful o
 
 ### Calldata analysis
 
-We already know that the attack is based on some transaction to the token address
+We already know that the attack is based on some transaction to the `token` address
 ```solidity
 0xa9059cbb00000000000000000000000000000000000000000000000000000000aaaa0003000000000000000000000000000000000000000000000000743133125f0000010000000000000000000000000000000000000000000000000000000000000000
 ```
@@ -210,7 +207,7 @@ Let's break down this calldata step by step:
 ```bash
  1) "transfer(address,uint256)"
 ```
-So, this is just an ERC20 transfer function.
+So, this is just an **ERC20** `transfer()` function.
 ```bash
 0x00000000000000000000000000000000aaaA0003
 ```
@@ -219,7 +216,7 @@ Obviously, this is the address of the vault contract.
  8372529336254726145 [8.372e18]
 ```
 And the last parameter is amount to send.
-As a result, we clarified everything: Attacker sends some tokens to vault contract and it should lead to flashloan error.
+As a result, we clarified everything: Attacker sends some tokens to `vault` contract and it should lead to flashloan error.
 ## Using of counterexample 
 First of all, let's find all contract addresses in **forge**. We'll use the same console logging here and this is what we got:
 ```bash
@@ -247,7 +244,7 @@ contract Attacker is Test, SymTest {
     }
 }
 ```
-This is an exact copy of SymbolicAttacker, except we've replaced the symbolic values with concrete values ​​from the counterexample. 
+This is an exact copy of **SymbolicAttacker**, except we've replaced the symbolic values with concrete values ​​from the counterexample. 
 And of course, we replaced the addresses from Halmos with Foundry addresses.
 And test_unstoppable():
 ```solidity
@@ -270,7 +267,7 @@ Ran 1 test suite in 37.58ms (1.56ms CPU time): 2 tests passed, 0 failed, 0 skipp
 Success! The challenge "Unstoppable" is solved successfully using Halmos symbolic testing.
 
 ## And what about fuzzing?
-At the time of writing, [Echidna-driven](https://github.com/crytic/damn-vulnerable-defi-echidna/blob/solutions/contracts/unstoppable/UnstoppableEchidna.sol) solution by Crytic team and [Foundry-driven](https://github.com/devdacian/solidity-fuzzing-comparison/blob/main/test/02-unstoppable/UnstoppableBasicFoundry.t.sol) solution by devdacian can be found on the Internet. However, these solutions were made for older versions of Unstoppable. The current version needs to check other invariants, so we will work with a modernized solution. Of course, I chose invariant-driven Foundry as my fuzzing engine since the current version of Damn-Vulnerable-Defi was completely rewritten on Foundry. 
+At the time of writing, [Echidna-driven](https://github.com/crytic/damn-vulnerable-defi-echidna/blob/solutions/contracts/unstoppable/UnstoppableEchidna.sol) solution by **Crytic team** and [Foundry-driven](https://github.com/devdacian/solidity-fuzzing-comparison/blob/main/test/02-unstoppable/UnstoppableBasicFoundry.t.sol) solution by **devdacian** can be found on the Internet. However, these solutions were made for older versions of "Unstoppable". The current version needs to check other invariants, so we will work with a modernized solution. Of course, I chose invariant-driven Foundry as my fuzzing engine since the current version of Damn-Vulnerable-Defi was completely rewritten on Foundry. 
 ### Invariant
 The invariant is obvious - I just took the code of the **_isSolved()** function from **Unstoppable_Halmos.t.sol** and used it:
 ```solidity
@@ -283,7 +280,7 @@ function invariant_check_flash_loan() public {
 }
 ```
 ### SetUp()
-And the **SetUp()** was changed somewhat, where it was indicated that the attacking actor is only the player, and fuzzing is performed on all known contracts:
+And the `SetUp()` was changed somewhat, where it was indicated that the attacking actor is only the `player`:
 ```solidity
 function setUp() public {
 ...
@@ -305,7 +302,7 @@ This method also quickly and simply found the attacking transaction.
 ## Conclusions
 1. We proved that Halmos can be used to solve CTF problems. We had a simple one-transaction challenge and Halmos solved it in a rather intuitive and understandable way
 2. Analyzing counterexamples can be tricky due to hard-coded addresses and parameters. We can't just put a counterexample in the source code and expect it to behave like it does inside Halmos
-3. When we try to migrate a normal Foundry test to Halmos, we need to be careful not to use unsupported functionality from Foundry, or tricky cheat codes like makeAddr()
+3. When we try to migrate a normal Foundry test to Halmos, we need to be careful not to use unsupported functionality from Foundry, or tricky cheatcodes like `makeAddr()`
 4. Getting into recursion should be avoided as it can lead to spurious counterexamples or reduce code coverage
 5. In the case of fairly simple problems with a trivial solution, the solution through fuzzing looks and is much simpler: writing it took ten times less time and effort than solving through Halmos. However, **!!!SPOILER ALERT!!!**, Halmos will show its power in the following less trivial challenges
 ## What's next?
