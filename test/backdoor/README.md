@@ -231,7 +231,7 @@ Next, since the `singleton` address is transmitted in a symbolic manner when cre
 
 We need to fix the "symbolic offset" error that occurs inside `SafeProxyFactory::deployProxy()`, while not damaging the main logic of this `proxy`. It's hard to think of anything better than just adding another `symbolic_fallback` function that will handle this specific case:
 ```solidity
-contract SafeProxy is Test, SymTest{
+contract SafeProxy is FoundryCheats {
     address internal singleton;
 
     bool reent_guard = false;
