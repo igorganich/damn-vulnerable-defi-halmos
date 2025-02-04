@@ -3,19 +3,19 @@
 halmos 0.2.2.dev1+gd4cac2e was used in this article
 ## Foreword
 It is strongly assumed that the reader is familiar with the previous articles on solving 
-1. ["Unstoppable"](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/unstoppable) 
-2. ["Truster"](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/truster)
-3. ["Naive-receiver"](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/naive-receiver)
-4. ["Side-entrance"](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/side-entrance)
+1. [Unstoppable](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/unstoppable) 
+2. [Truster](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/truster)
+3. [Naive-receiver](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/naive-receiver)
+4. [Side-entrance](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/side-entrance)
 
 since the main ideas here are largely repeated and we will not dwell on them again.
 
-Also, let's clearly talk that despite the same name, the **"The-rewarder"** challenge in v4 has completely new conditions and bug mechanics compared to v3. Therefore, it is highly recommended to familiarize yourself with the new **"The-rewarder"** and the common solution to this problem. We will focus specifically on the use of Halmos, but not on the description of the challenge.
+Also, let's clearly talk that despite the same name, the **The-rewarder** challenge in v4 has completely new conditions and bug mechanics compared to v3. Therefore, it is highly recommended to familiarize yourself with the new **The-rewarder** and the common solution to this problem. We will focus specifically on the use of Halmos, but not on the description of the challenge.
 ## Preparation
 ### Common prerequisites
 1. Copy **TheRewarder.t.sol** file to **TheRewarderHalmos.t.sol**.
 2. Rename `test_theRewarder()` to `check_theRewarder()`, so Halmos will execute this test symbolically.
-3. Avoid using `makeAddr()` cheatcode. Due to the specifics of the task, hard-coded addresses will look unusual. This time, we will take the **player's** and **Alice's** addresses directly from **weth-distribution.json**, because the very logic of the task is tied to these addresses:
+3. Avoid using `makeAddr()` cheatcode. Due to the specifics of the task, hard-coded addresses will look unusual. This time, we will take the `player` and `Alice` addresses directly from **weth-distribution.json**, because the very logic of the task is tied to these addresses:
     ```solidity
     address deployer = address(0xcafe0000);
     address recovery = address(0xcafe0002);
@@ -77,7 +77,7 @@ assertEq(
     "Not enough WETH in recovery account"
 );
 ```
-As usual, we check whether we can empty the distributor of some unexpected amount. Note that the formula here will be a bit more complicated than we are used to seeing. First, we take into account that **Alice** has taken her reward and it is expected that the player himself can take his reward once. Therefore, the invariant looks like this:
+As usual, we check whether we can empty the `distributor` of some unexpected amount. Note that the formula here will be a bit more complicated than we are used to seeing. First, we take into account that `Alice` has taken her reward and it is expected that the `player` himself can take his reward once. Therefore, the invariant looks like this:
 ```solidity
 function _isSolved() private view {
     assert (dvt.balanceOf(address(distributor)) >= 
@@ -88,7 +88,7 @@ function _isSolved() private view {
 ```
 `11524763827831882` and `1171088749244340` are the amounts of **DVT** and **WETH** the player is expected to be able to collect as he is one of the reward recipients. We took these numbers from **dvt-distribution.json** and **weth-distribution.json**.
 ### Loading rewards
-In the setup process, the original test internally parses 1000 records in **JSON** format and uploads them to the **distributor** contract. However, there is a problem: Halmos does not support the required cheat codes, namely `vm.projectRoot()`, `vm.readFile()` and `vm.parseJson()`. We will work around this problem in a somewhat dirty but effective way. Instead of parsing the **JSON**, we will immediately explicitly insert the bytes into the right place. 
+In the setup process, the original test internally parses 1000 records in **JSON** format and uploads them to the `distributor` contract. However, there is a problem: Halmos does not support the required cheat codes, namely `vm.projectRoot()`, `vm.readFile()` and `vm.parseJson()`. We will work around this problem in a somewhat dirty but effective way. Instead of parsing the **JSON**, we will immediately explicitly insert the bytes into the right place.
 
 First, let's log the necessary bytes from the original **TheRewarder.t.sol**:
 ```solidity
@@ -135,12 +135,11 @@ function _loadRewardsWETH() private view returns (bytes32[] memory leaves) {
     }
 }
 ```
-This thing takes a long time in Halmos: it took all of 1 minute on my machine to create **dvt** and **weth** leaves.
+This thing takes a long time in Halmos: it took all of 1 minute on my machine to create `dvt` and `weth` leaves.
 ### Dealing with Merkle functions
 Before proceeding, it is highly recommended to understand how [Merkle trees](https://www.investopedia.com/terms/m/merkle-tree.asp) work and how they check for a leaf presence in the tree.
 
-Again cryptography puts a spanner in our works.
-This time when we try to run the test we get an error:
+Cryptography puts a spanner in our works again. This time when we try to run the test we get an error:
 ```javascript
 $ halmos --solver-timeout-assertion 0 --function check_theRewarder
 ...
@@ -217,7 +216,7 @@ $ halmos --solver-timeout-assertion 0 --function check_theRewarder --loop 10000 
 [console.log] f_sha3_512(Concat(f_sha3_512(Concat(f_sha3_512(Concat(f_sha3_512(Concat...de962)))))))))))))))))))))
 ...
 ```
-The good news is that we don't have to look for root in the runtime. It is enough to calculate it once, even in the original forge test and hardcode it:
+The good news is that we don't have to look for `root` in the runtime. It is enough to calculate it once, even in the original forge test and hardcode it:
 ```solidity
 merkle = new Merkle();
 console.logBytes32(merkle.getRoot(dvtLeaves));
@@ -297,9 +296,10 @@ function processProof(bytes32[] memory proof, bytes32 leaf) internal pure return
 }
 ```
 Obviously, we cannot find such an `inputClaim.proof` using symbolic analysis methods, this would literally mean breaking hash cryptography. 
-Therefore, Halmos will not work properly without finding a valid proof.
+Therefore, Halmos will not work properly without finding a valid `proof`.
+
 However, there is a way out. We have already met with cryptographic checks in [Naive-receiver](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/naive-receiver#optimizations).
-There we completely removed the cryptographic verification, but clearly indicated that the entered data was correct. We will do something similar here: remove the cryptographic verification, but assume that we transferred the correct **amount** for our `msg.sender` (this is what this cryptographic verification about):
+There we completely removed the cryptographic verification, but clearly indicated that the entered data was correct. We will do something similar here: remove the cryptographic verification, but assume that we transferred the correct `amount` for our `msg.sender` (this is what this cryptographic verification about):
 ```solidity
 ...
 if (msg.sender == address(0x44E97aF4418b7a17AABD8090bEA0A471a366305C)) // player address
@@ -337,7 +337,7 @@ vm.stopPrank(); // stop alice prank
 ```
 Wow, it was really a long preparation. Let's move on to the next steps!
 ## No SymbolicAttacker? 
-There is a feature in this challenge that prevents us from using the convenient **SymbolicAttacker** proxy contract. Since the logic of **TheRewarderDistributor** contract is tied to the player's specific address, `msg.sender` in **TheRewarderDistributor** should be exactly the player's address. Instead, we'll move all of the **SymbolicAttacker** logic right into **TheRewarderChallenge** contract.
+There is a feature in this challenge that prevents us from using the convenient **SymbolicAttacker** proxy contract. Since the logic of **TheRewarderDistributor** contract is tied to the `player` specific address, `msg.sender` in **TheRewarderDistributor** should be exactly the player's address. Instead, we'll move all of the **SymbolicAttacker** logic right into **TheRewarderChallenge** testing contract.
 ## Improvement of coverage
 According to the plan, launch one symbolic transaction to check whether all paths are covered:
 ```solidity
@@ -390,7 +390,7 @@ function claimRewards(Claim[] memory inputClaims, IERC20[] memory inputTokens) e
     IERC20(token).transfer(msg.sender, inputClaim.amount);
 }
 ```
-Here it is also worth explicitly talking about how Halmos handles arrays of symbolic size, as in this case (if player calls this function symbolically - the size of `inputClaims` and `inputTokens` arrays will be symbolic). This is regulated by the `--default-array-lengths` parameter, which by default is "0,1,2". This means that Halmos will handle 3 cases separately: when array size is 0, when it is 1, and when it is 2.
+Here it is also worth explicitly talking about how Halmos handles arrays of symbolic size, as in this case (if `player` calls this function symbolically - the size of `inputClaims` and `inputTokens` arrays will be symbolic). This is regulated by the `--default-array-lengths` parameter, which by default is "0,1,2". This means that Halmos will handle 3 cases separately: when array size is 0, when it is 1, and when it is 2.
 
 Run:
 ```javascript
@@ -437,7 +437,7 @@ halmos_SymbolicInputToken_address_7b0d29c_30 = 0x0000000000000000000000000000000
 ```
 Remember that we replaced the `inputTokens[inputClaim.tokenIndex]` logic with a `SymbolicInputToken`, so, the logic of the bug is not so obvious from the counterexample. But nevertheless - a bug was found.
 ## Using a counterexample
-In the Halmos test, we ignored cryptographic checks. However, we will use them here. We also remember that we need to transfer all funds to **recovery**. So, let's build an attack so as to empty the **distributor** for the maximum possible amount:
+In the Halmos test, we ignored cryptographic checks. However, we will use them here. We also remember that we need to transfer all funds to `recovery`. So, let's build an attack so as to empty the `distributor` for the maximum possible amount:
 ```solidity
 function test_theRewarder() public checkSolvedByPlayer {
     bytes32[] memory dvtLeaves = _loadRewards(
@@ -531,7 +531,7 @@ function _loadRewardsWETH() private view returns (bytes32[] memory leaves) {
     }
 }
 ```
-Also, for simplicity, we completely ignore the logic with **Alice**, since the fact that she took her tokens does not affect the presence of the bug in any way. We are only interested in whether Echidna can find the bug. 
+Also, for simplicity, we completely ignore the logic with `Alice`, since the fact that she took her tokens does not affect the presence of the bug in any way. We are only interested in whether Echidna can find the bug. 
 
 So, invariant:
 ```solidity
@@ -615,7 +615,7 @@ $ echidna test/the-rewarder/TheRewarderEchidna.sol --contract TheRewarderEchidna
 echidna_testSolved: passing
 ...
 ```
-Yeah, the problem is that Echidna has a hard time generating an inputClaims array of size at least 2. I found the following [article](https://secure-contracts.com/program-analysis/echidna/fuzzing_tips.html#handling-dynamic-arrays) that recommends using the **push-pop-use** pattern in such cases. Also for this test we returned the **invariant** again.
+Yeah, the problem is that Echidna has a hard time generating an `inputClaims` array of size at least 2. I found the following [article](https://secure-contracts.com/program-analysis/echidna/fuzzing_tips.html#handling-dynamic-arrays) that recommends using the **push-pop-use** pattern in such cases. Also for this test we returned the **invariant** again.
 ```solidity
 contract TheRewarderDistributor {
     ...
@@ -662,8 +662,8 @@ echidna_testSolved: failed!💥
     TheRewarderDistributor.claimRewards()
 ...
 ```
-Success! the push-pop pattern really turned out to be effective. Note that although the counterexample does not show a valid amount, we remember that we specified it explicitly instead of a cryptographic check.
+Success! the **push-pop-use** pattern really turned out to be effective. Note that although the counterexample does not show a valid amount, we remember that we specified it explicitly instead of a cryptographic check.
 ## Conclusions
 1. Even if we face some engine limitations (Halmos or Echidna) - don't be afraid to use "dirty" tricks, even if they look ugly. All for the sake of the result!
 2. When constructing tests with cryptographic checks, there is a very effective technique: we do not check cryptography at all, but we explicitly assume that the data was entered correctly.
-3. If we compare how Halmos and Echidna coped with this challenge, we can say that both tools did quite well. But, in my opinion, Halmos was a little more convenient - every step of contract preparation was obvious and planned, the tool itself gave a hint on how to change the target contract through warnings. At the same time, in the case of Echidna, we had to find the limits of code coverage manually and use not the most obvious technique to force fuzzing to cover the case with 2 inputClaims.
+3. If we compare how Halmos and Echidna coped with this challenge, we can say that both tools did quite well. But, in my opinion, Halmos was a little more convenient - every step of contract preparation was obvious and planned, the tool itself gave a hint on how to change the target contract through warnings. At the same time, in the case of Echidna, we had to find the limits of code coverage manually and use not the most obvious technique to force fuzzing to cover the case with 2 `inputClaims`.
