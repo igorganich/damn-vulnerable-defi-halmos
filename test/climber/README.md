@@ -131,9 +131,21 @@ We begin to come up with invariants that could help us achieve some unexpected b
     ```
 ## Improvement of coverage
 ### SymbolicAttacker callback handling
-Up to this point, we have not considered scenarios where some target contract makes a symbolic `call` back to **SymbolicAttacker**. Only in cases where it is obvious that we cannot do without it, we added such logic. But on the example of the [side-entrance](https://github.com/igorganich/damn-vulnerable-defi-halmos/blob/master/test/side-entrance/README.md#callbacks), [Selfie](https://github.com/igorganich/damn-vulnerable-defi-halmos/blob/master/test/selfie/README.md#onflashloan) and [backdoor](https://github.com/igorganich/damn-vulnerable-defi-halmos/blob/master/test/backdoor/README.md#delegatecall) challenges, we can say that this is a fairly common scenario when control is passed back to the contract controlled by the **attacker**.
+Up to this point, we have not considered scenarios where some target contract makes a symbolic `call` back to **SymbolicAttacker** by default. But on the example of the [side-entrance](https://github.com/igorganich/damn-vulnerable-defi-halmos/blob/master/test/side-entrance/README.md#callbacks), [Selfie](https://github.com/igorganich/damn-vulnerable-defi-halmos/blob/master/test/selfie/README.md#onflashloan) and [backdoor](https://github.com/igorganich/damn-vulnerable-defi-halmos/blob/master/test/backdoor/README.md#delegatecall) challenges, we can say that this is a fairly common scenario when control is passed back to the contract controlled by the attacker.
 
-Therefore, we will now add a special `fallback` to **SymbolicAttacker**, which will be able to handle calls from other contracts:
+Therefore, we will now add a special `fallback()` to **SymbolicAttacker**, which will be able to handle calls from other contracts:
+```solidity
+fallback() external payable {
+    bytes4 selector = svm.createBytes4("fallback_selector");
+    vm.assume(selector == bytes4(msg.data));
+    execute_tx("fallback_target");
+    bytes memory retdata = svm.createBytes(1000, "fallback_retdata");// something should be returned
+    assembly {
+        return(add(returndata, 0x20), mload(returndata));
+    }
+}
+```
+Now let's add functionality to **GlobalStorage** to allow other contracts to call this `fallback()`:
 
 ```javascript
 

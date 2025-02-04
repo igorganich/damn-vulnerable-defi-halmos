@@ -136,7 +136,7 @@ function onFlashLoan(address initiator, address token,
     target.call(data);
 }
 ```
-Plus, take into account that this `flashLoan` needs to be returned "honestly" this time. And should return a valid string:
+Plus, take into account that this flashLoan needs to be returned "honestly" this time. And should return a valid string:
 ```solidity
 function flashLoan(...)
 {
@@ -217,7 +217,7 @@ Killed
 ```
 If we do not take into account the fake [permit-transferFrom](https://github.com/igorganich/damn-vulnerable-defi-halmos/blob/master/test/truster/README.md#counterexamples-analysis) counterexample we are familiar with, then the solution is still not found. Moreover, it did not even complete due to Out-of-memory. It is necessary to optimize!
 ### Small update
-As of this writing, this behavior of Halmos has been [fixed](https://github.com/a16z/halmos/issues/425). Now the memory does not grow linearly with the growth of paths number, so we at least can finish 2 symbolic transactions in some time. However, a counterexample has still not been found, and such a test has been running for about 12 hours.
+As of this writing, the "out-of-memory" issue has been [fixed](https://github.com/a16z/halmos/issues/425). Now the memory does not grow linearly with the growth of paths number, so we at least can finish 2 symbolic transactions in some time. However, a counterexample has still not been found, and such a test has been running for about 12 hours.
 ## Optimizations and heuristics
 We have already met with path explosion limits in [Naive-receiver](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/naive-receiver#optimizations). And we can already highlight several directions of optimizations and heuristics that can be applied to bypass this limitation:
 1. Add "solid" optimizations, which are known to have no effect on the result.
@@ -228,7 +228,7 @@ Let's go through each of these points.
 ### Solid optimizations
 The first thing I can think of here is to completely exclude `ERC20::permit` from symbolic function candidates, which is already starting to get annoying. I can't think of any scenario where we could apply it where `ERC20Votes::approve` is not applicable. A similar situation with `ERC20Votes::delegateBySig`. We have a simple `ERC20Votes::delegate` that we can apply in all the same scenarios.
 
-So we will ban them by implementing a new functionality to exclude entire functions from symbolic calls coverage in GlobalStorage:
+So we will ban them by implementing a new functionality to exclude entire functions from symbolic calls coverage in **GlobalStorage**:
 ```solidity
 contract GlobalStorage is Test, SymTest {
     constructor() {
@@ -276,7 +276,7 @@ contract GlobalStorage is Test, SymTest {
     ...
 }
 ```
-
+### Expand onFlashLoan
 Until now, we have expanded the number of symbolic attacking transactions only in 'attack()'. But actually this is not the only place where it is possible. Since processing 2 symbolic transactions directly from `attack()` is quite difficult for Halmos, we could try adding another symbolic transaction inside the 'onFlashLoan()' callback instead. This way we still process 2 symbolic transactions, but only if a **flashLoan** happened. This greatly reduces the number of scenarios we cover, which saves us a lot of resources:
 ```solidity
 ...
@@ -306,11 +306,11 @@ function attack() public {
     execute_tx();*/
 }
 ```
-And for now, let's abandon the logic with warp, since in fact we have only one attacking symbolic transaction running, but let's keep in mind that it may be needed later.
+And for now, let's abandon the logic with `vm.warp()`, since in fact we have only one attacking symbolic transaction running, but let's keep in mind that it may be needed later.
 ### Invariants
 Until now, we used only invariants that somehow followed from the initial conditions of the problem. I suggest this time to go a much more creative way and come up with any scenarios that seem unexpected, unnatural or buggy. Yes, let's do the work for the imaginary developers of these contracts and cover them with tests :D.
 
-Let's start with token **allowance**. It is unexpected, that as a result of the **attacker's** actions, the **pool's** or **governance's** allowance may somehow change:
+Let's start with token **allowance**. It is unexpected, that as a result of the **SymbolicAttacker's** actions, the `pool` or `governance` allowance may somehow change:
 ```solidity
 function _isSolved() private view {
     ...
@@ -338,7 +338,7 @@ function _isSolved() private view {
     ...
 }
 ```
-And what we have already talked about above. It is unexpected that there may be a scenario where an **attacker** can register some **action**:
+And what we have already talked about above. It is unexpected that there may be a scenario where an `attacker` can register some **action**:
 ```solidity
 function _isSolved() private view {
     ...
@@ -370,7 +370,7 @@ p_target_address_188b5bf_41 = 0x000000000000000000000000000000000000000000000000
 p_value_uint128_14d3e47_42 = 0x0000000000000000000000000000000000000000000000000000000000000000
 [FAIL] check_selfie() (paths: 7080, time: 948.98s, bounds: [])
 ```
-Cool! We reduced the number of paths to ~7000 and found a scenario where an **attacker** can register an **action**: We borrow tokens through `flashLoan`, `delegate` them to ourselves, register an **action**, return the loan. In addition, we have "unlocked" the path to `executeAction`! And actually, we haven't needed warp here yet. That's good. 
+Cool! We reduced the number of paths to ~7000 and found a scenario where an `attacker` can register an **action**: We borrow tokens through `flashLoan()`, `delegate()` them to ourselves, register an **action**, return the loan. In addition, we have "unlocked" the path to `executeAction()`! And actually, we haven't needed warp here yet. That's good. 
 
 But it is still not clear how to use this bug to empty the pool. Therefore, our journey continues.
 ## SymbolicAttacker preload
@@ -464,9 +464,9 @@ Counterexample:
     halmos_selector_bytes4_b526f44_15 = executeAction
     p_actionId_uint256_b6a16cb_10 = 0x0000000000000000000000000000000000000000000000000000000000000001     
 ```
-This time it's a little hard to follow what happened, since we added a preload stage, but it's generally clear: our **action** executes `emergencyExit` from the **pool**, thereby emptying it. Attack scenario found!
+This time it's a little hard to follow what happened, since we added a preload stage, but it's generally clear: our **action** executes `emergencyExit()` from the `pool`, thereby emptying it. Attack scenario found!
 ## Using a counterexample
-**Attacker**:
+Attacker:
 ```solidity
 // SPDX-License-Identifier: MIT
 
@@ -536,12 +536,12 @@ Success!
 I'm very happy that I don't have to prepare this challenge contracts for fuzzing testing. The **Crytic team** already has a ready-made solution to this problem (Damn Vulnerable Defi V3) using Echidna [here](https://github.com/crytic/damn-vulnerable-defi-echidna/blob/solutions/contracts/selfie/EchidnaSelfie.sol). Before a detailed analysis of their solutions, looking ahead, I want to say that this is currently the most vivid example of the difference in approaches to the preparation of contracts in Halmos and Echidna in the case of such non-trivial attacks. And I am really impressed with the work done here. The fact that they did make Echidna work here deserves respect!
 ### Version differences
 in DVD V3 and V4, the very essence of the challenge remained the same, with the same bug. However, there are some differences in key function names and token logic:
-1. In V3, the `emergencyExit` function is called `drainAllFunds`.
-2. The `onFlashLoan` function is called `receiveTokens`.
-3. Logic via `snapshot` is used instead of `ERC20Votes::delegate`.
+1. In V3, the `emergencyExit()` function is called `drainAllFunds()`.
+2. The `onFlashLoan()` function is called `receiveTokens()`.
+3. Logic via `snapshot()` is used instead of `ERC20Votes::delegate()`.
 
 ### Idea overview
-To describe the idea briefly: we have a "monstrous" [push-use](https://github.com/igorganich/damn-vulnerable-defi-halmos/blob/master/test/the-rewarder/README.md#analysis-of-the-limits-of-echidna) pattern, where a small number of functions that can be called by an attacker are described directly in the code without any abstractions. The first few calls are to "setup" the functions that will then be called by the attacking transaction.
+To describe the idea briefly: we have a "monstrous" [push-pop-use](https://github.com/igorganich/damn-vulnerable-defi-halmos/blob/master/test/the-rewarder/README.md#analysis-of-the-limits-of-echidna) pattern, where a small number of functions that can be called by an attacker are described directly in the code without any abstractions. The first few calls are to "setup" the functions that will then be called by the attacking transaction.
 ### Reduced number of scenarios
 As with Halmos solution, the Echidna-based solution has reduced the number of covered scenarios. But there is a key important difference: basically, they only consider these target functions:
 ```solidity
@@ -554,9 +554,9 @@ enum CallbackActions {
 ```
 In the same time, during the optimizations when working in Halmos, we did not cut out the entire functions that we have to cover. 
 
-I understand why they don't check, for example, `ERC20::transfer`. Otherwise, the code would be even more bloated. More on that a little later. Nevertheless, in my opinion, this is already a very big hint for a fuzzer.
+I understand why they don't check, for example, `ERC20::transfer()`. Otherwise, the code would be even more bloated. More on that a little later. Nevertheless, in my opinion, this is already a very big hint for a fuzzer.
 ### setup
-So, let's find out how Echidna decides which functions will be run in the `receiveTokens` callback.
+So, let's find out how Echidna decides which functions will be run during attack.
 
 We have an array where the identifiers of these functions are written:
 ```solidity
@@ -599,7 +599,7 @@ function pushExecuteActionToCallback() external {
     callbackActionsToBeCalled.push(uint256(CallbackActions.executeAction));
 }
 ```
-Here it is also worth describing the `createPayload` function, which is performed as part of the `queueAction` push. Since we already know that Echidna is not good at running functions that are passed as target and calldata, we have to work around it somehow:
+Here it is also worth describing the `createPayload()` function, which is performed as part of the `queueAction()` push. Since we already know that Echidna is not good at running functions that are passed as target and calldata, we have to work around it somehow:
 ```solidity
 // to store data related to the given payload created by Echidna
 struct QueueActionPayload {
@@ -655,8 +655,7 @@ function createPayload(
 ```
 A bit like our Frankenstein from [Truster](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/truster#echidna), isn't it? Again, I draw your attention to the fact that only 2 functions that can be launched inside `executeAction` are considered here, and the function is already so huge. And the parameters of these functions are not abstract, but hard-coded. Against this background, the usability of Halmos is obvious.
 ### Call actions
-After the setup is complete, the fuzzer has the ability to run all these functions. 
-`receiveTokens` has functionality for this:
+After the setup is complete, the fuzzer has the ability to run all these functions. `receiveTokens()` has functionality for this:
 ```solidity
 ...
  function receiveTokens(address, uint256 _amount) external {
@@ -762,7 +761,7 @@ function executeAction() public {
     ++payloadsExecutedCounter;
 }
 ```
-Running the `flashLoan` and `executeAction` happen here:
+Running the `flashLoan()` and `executeAction()` happen here:
 ```solidity
 ...
 function flashLoan() public {
@@ -803,3 +802,5 @@ I missed some details, but I would recommend you read the full solution by yours
 2. You can expand the number of symbolic transactions not only in the **SymbolicAttacker** entry point, but also in symbolic callbacks. This may save us resources.
 3. If we are looking for an attack - sometimes you can find a bug by not looking for a direct counterexample, but simply by finding **SOMETHING UNEXPECTED**. It is not possible to come up with some clear algorithm here, only it is possible to advise the studying of the business logic of the contract and make new invariants based on this.
 4. The comparison of fuzzing and symbolic analysis approaches based on this challenge has most clearly shown the advantage of Halmos when testing contracts with a high level of logic abstraction. The fuzzing preparation looks like a big overengineering, while the symbolic execution preparation is certainly not as easy as we're used to, but still pretty straightforward.
+### Next challenge
+Next challenge to read is [Backdoor](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/backdoor).

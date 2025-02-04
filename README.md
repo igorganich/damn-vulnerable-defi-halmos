@@ -10,6 +10,21 @@ A comparison with fuzzing techniques using Foundry fuzzing and Echidna in the co
 
 **WARNING**: This repository is still in progress, so there may not be solutions for all problems.
 
+# Goals
+As a result of this work, I expect to achieve the following goals:
+1. Learn how to build symbolic execution tests in Halmos, adapt target contracts for symbolic testing
+2. Identify the limits of using Halmos, find ways to bypass them using heuristics and optimizations
+3. Accumulate techniques to find bugs and solve complex CTF problems in practice
+4. Make some "benchmark" of Halmos comparing it with fuzzing engines
+
+# Who might be interested?
+1. Auditors, EVM Security Specialists
+2. CTFers
+3. Solidity developers
+4. Newbies learning solidity and security of smart contracts
+5. Crypto enthusiasts
+
+
 # Prerequisites
 1. The reader should be familiar with the Halmos basics: https://github.com/a16z/halmos
 2. In this material, we focus specifically on using Halmos, not on the description of the Damn Vulnerable Defi challenges. Therefore, it is expected that the reader is familiar with Damn Vulnerable DeFi and knows how to solve these problems. Here is a great material with solutions: https://www.youtube.com/playlist?list=PLwHGiYB583YuDoAjKPDfYMKOmuFIGJCnW
