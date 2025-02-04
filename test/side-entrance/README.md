@@ -3,22 +3,22 @@
 halmos 0.2.2.dev1+gd4cac2e was used in this article
 ## Foreword
 It is strongly assumed that the reader is familiar with the previous articles on solving 
-1. ["Unstoppable"](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/unstoppable) 
-2. ["Truster"](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/truster)
-3. ["Naive-receiver"](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/naive-receiver)
+1. [Unstoppable](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/unstoppable) 
+2. [Truster](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/truster)
+3. [Naive-receiver](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/naive-receiver)
 
 since the main ideas here are largely repeated and we will not dwell on them again.
 ## Preparation
 ### Common prerequisites
 1. Copy **SideEntrance.t.sol** file to **SideEntranceHalmos.t.sol**. We will work in this file.
-2. Rename **“test_sideEntrance()”** to **"check_sideEntrance()"**, so Halmos will execute this test symbolically.
-3. Avoid using **makeAddr()** cheatcode:
+2. Rename `test_sideEntrance()` to `check_sideEntrance()`, so Halmos will execute this test symbolically.
+3. Avoid using `makeAddr()` cheatcode:
     ```solidity
     address deployer = address(0xcafe0000);
     address player = address(0xcafe0001);
     address recovery = address(0xcafe0002);
     ```
-4. Create **GlobalStorage** contract and save pool's address-name pair:
+4. Create **GlobalStorage** contract and save `pool` address-name pair:
     ```solidity
     import "lib/GlobalStorage.sol";
     ...
@@ -65,14 +65,14 @@ function _isSolved() private view {
     assertEq(recovery.balance, ETHER_IN_POOL, "Not enough ETH in recovery account");
 }
 ```
-This time we won't be doing a completely opposite check. Instead, taking into account the lessons we learned in the previous **"Naive-receiver"**, we will first look for just some bug. Let's remove the condition about recovery and find out if we can even empty the pool by some amount:
+This time we won't be doing a completely opposite check. Instead, taking into account the lessons we learned in the previous [Naive-receiver](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/naive-receiver#a-simplified-invariant), we will first look for just some bug. Let's remove the condition about recovery and find out if we can even empty the pool by some amount:
 ```solidity
 function _isSolved() private view {
     assert(address(pool).balance >= ETHER_IN_POOL);
 }
 ```
 ### SymbolicAttacker implementation
-In this challenge, we encounter the logic of using native **ETH** assets instead of some token or wrapped **ETH** (**WETH**) for the first time. Therefore, it is natural that **SymbolicAttacker** should also consider **ETH** value in transactions. First, let's transfer the player's entire **ETH** balance to SymbolicAttacker We still can execute transactions from **player** since Halmos doesn't count gas :):
+In this challenge, we encounter the logic of using native **ETH** assets instead of some token or wrapped **ETH** (**WETH**) for the first time. Therefore, it is natural that **SymbolicAttacker** should also consider **ETH** value in transactions. First, let's transfer the player's entire **ETH** balance to **SymbolicAttacker**. We still can execute transactions from `player` since Halmos doesn't count gas :):
 ```solidity
 function check_sideEntrance() public checkSolvedByPlayer {
     SymbolicAttacker attacker = new SymbolicAttacker();
@@ -124,7 +124,7 @@ Path #4:
 ...
 [PASS] check_sideEntrance() (paths: 9, time: 0.26s, bounds: [])
 ```
-There is a problem here: **SideEntranceLenderPool::flashLoan()** assumes that the contract that called this function has a payable callback "**execute()**", which our **SymbolicAttacker** does not have. 
+There is a problem: `SideEntranceLenderPool::flashLoan()` assumes that the contract that called this function has a payable callback `execute()`, which our **SymbolicAttacker** does not have. 
 ```solidity
 contract SideEntranceLenderPool {
     ...
@@ -134,7 +134,7 @@ contract SideEntranceLenderPool {
     ...
     }
 ```
-Obviously, we need to implement some **execute()** function inside of **SymbolicAttacker**. But what should be there? Literally anything can be executed during this function... Actually, this is the answer - we work with it as with **attack()** - a number of symbolic subtransactions are simply executed inside. Let's start with one, and then we'll see if it's enough.
+Obviously, we need to implement some `execute()` function inside of **SymbolicAttacker**. But what should be there? Literally anything can be executed during this function... Actually, this is the answer - we work with it as with `attack()` - a number of symbolic subtransactions are simply executed inside. Let's start with one, and then we'll see if it's enough.
 ```solidity
 function execute () external payable {
     uint256 ETH_val = svm.createUint256("ETH_val_execute");
@@ -145,7 +145,7 @@ function execute () external payable {
     target.call{value: ETH_val}(data);
 }
 ```
-And one more problem in **SideEntranceLenderPool::withdraw()**.
+And one more problem in `SideEntranceLenderPool::withdraw()`:
 Despite the fact that **SymbolicAttacker** had no pool balance at the time of the transaction, Halmos still attempted to transfer some symbolic amount of **ETH** to **SymbolicAttacker**. And this is what happened:
 ```javascript
 Path #2:
@@ -156,7 +156,7 @@ Path #2:
                 ↩ REVERT 0x (error: Revert())
                 ...
 ```
-We don't have the **receive()** callback function, so we implement it as well:
+We don't have the `receive()` callback function, so we implement it as well:
 ```solidity
 receive() external payable {
     uint256 ETH_val = svm.createUint256("ETH_val_receive");
@@ -168,7 +168,7 @@ receive() external payable {
 }
 ```
 ### Preventing recursion
-Now let's talk about possible recursion. This time, since we have 2 callback functions in **SymbolicAttacker** that behave like **execute_tx()**, we won't be able to conveniently use the **vm.assume(...)** pattern. At the same time, the standard [ReentrancyGuard](https://docs.openzeppelin.com/contracts/4.x/api/security#ReentrancyGuard) will not work for us, as it is common to all functions, which can cut off some scenarios.
+Now let's talk about possible recursion. This time, since we have 2 callback functions in **SymbolicAttacker** that behave like `execute_tx()`, we won't be able to conveniently use the `vm.assume(...)` pattern. At the same time, the default [ReentrancyGuard](https://docs.openzeppelin.com/contracts/4.x/api/security#ReentrancyGuard) will not work for us, as it is common to all functions, which can cut off some scenarios.
 So, let's make our simplest analogue of **ReentrancyGuard**:
 ```solidity
 contract SymbolicAttacker is Test, SymTest {
@@ -233,16 +233,15 @@ p_amount_uint256_b5e253c_05 = 0x000000000000000000000000000000000000000000000016
 Okay, that was pretty easy. Let's analyze a counterexample.
 ## Counterexamples analysis
 The counterexample clearly shows the sequence of what happened. 
-**SideEntranceLenderPool::flashLoan()** was called. pool called the **execute()** function from our **SymbolicAttacker**. He, in turn, using borrowed funds (and little amount of his own), put them on deposit in the same pool. **flashLoan** ended successfully, as the balance of the pool at the time of the end of flashLoan became even larger. After that, the **SymbolicAttacker** simply withdrew all the 
-unfair funds from the  deposit with the **withdraw()** function in the second transaction. 
+`SideEntranceLenderPool::flashLoan()` was called. `pool` called the `execute()` function from our **SymbolicAttacker**. He, in turn, using borrowed funds (and little amount of his own), put them on deposit in the same `pool`. FlashLoan ended successfully, as the balance of the `pool` at the end of flashLoan became even larger. After that, the **SymbolicAttacker** simply withdrew all the unfair funds from the deposit with the `withdraw()` function in the second transaction. 
 
-Let's also pay attention to what was done in the **receive()** callback:
+Let's also pay attention to what was done in the `receive()` callback:
 
 ```javascript
 halmos_selector_bytes4_780a835_24 = 0x00000000
 halmos_ETH_val_receive_uint256_4d032b7_19 = 0x000000000000000000000000000000000000000000000016c7c8b6b3a7640000
 ```
-Selector **0x00000000** is an **ETH** transfer. That is, it is simply sending a certain amount of **Ether** back to the pool. Since this does not affect the attack in any way, this part of the counterexample can be ignored when building the attack.
+Selector `0x00000000` is an **ETH** transfer. That is, it is simply sending a certain amount of **Ether** back to the `pool`. Since this does not affect the attack in any way, this part of the counterexample can be ignored when building the attack.
 ## Using a counterexample
 Now, with the bug, the attack becomes obvious:
 ```solidity
@@ -331,11 +330,11 @@ contract Handler is Test {
     receive() external payable {}
 }
 ```
-In my opinion, using such a **Handler** is not enough to say that the fuzzing is really capable of finding this kind of bugs.
+In my opinion, using such a **Handler** is kind of a cheating and it is not enough to say that the fuzzer really solved the challenge.
 
-Another solution is made by the **Crytic team** and can be found [at this link](https://github.com/crytic/building-secure-contracts/blob/master/program-analysis/echidna/exercises/exercise7/solution.sol). Here the situation is much better: the solution is abstract enough and gives space for **Echidna** itself to find a bug. Besides, it only took a few seconds to solve it.
+Another solution is made by the **Crytic team** and can be found at [this link](https://github.com/crytic/building-secure-contracts/blob/master/program-analysis/echidna/exercises/exercise7/solution.sol). Here the situation is much better: the solution is abstract enough and gives space for **Echidna** itself to find a bug. Besides, it only took a few seconds to solve it.
 
-Let's compare how **Echidna** and **Halmos** deal with the problem of "taking into account that any function can be executed inside **execute()**".
+Let's compare how **Echidna** and **Halmos** deal with the problem of "taking into account that any function can be executed inside `execute()`.
 
 Echidna:
 ```solidity
@@ -359,7 +358,7 @@ function execute() external payable override {
 }
 ...
 ```
-We explicitly indicate which functions can be called and with which parameters. Obviously, if there was a larger setup - this code would become much more "bloated". We already saw something like this in ["Truster"](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/truster#echidna).
+We explicitly indicate which functions can be called and with which parameters. Obviously, if there was a larger setup - this code would become much more "bloated". We already saw something like this in [Truster](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/truster#echidna).
 
 Now Halmos:
 ```solidity
@@ -376,7 +375,7 @@ function execute () external payable {
 It is easy to see that the Halmos-based code provides a better abstraction for such cases and does a better job of expanding the setup.
 ## Conclusions
 1. Using already accumulated techniques and principles, we solved the next Damn Vulnerable Defi challenge with Halmos quite easily. Every step was obvious and self-explanatory.
-2. Adapting the test to a specific contract is a good idea. For example, in this challenge we adapted to use native **ETH**. Here it is also worth noting that such an "advanced" SymbolicAttacker (with the ability to send and receive ETH), of course, can be applied to previous challenges as well. However, in the future, we will use this extension only in challenges tied to **ETH**, so as not to load the solver and counterexamples.
+2. Adapting the test to a specific contract is a good idea. For example, in this challenge we adapted to use native **ETH**. Here it is also worth noting that such an "advanced" **SymbolicAttacker** (with the ability to send and receive **ETH**), of course, can be applied to previous challenges as well. However, in the future, we will use this extension only in challenges tied to **ETH**, so as not to load the solver and counterexamples.
 3. We confirm again the conclusions we made earlier: in the case of a small setup, fuzzing really seems to be a very effective tool, even if it is necessary to use some transaction abstraction. However, fuzzing engines do not have convenient abstraction mechanisms, so if target contracts are tied to some logic of abstract calls, Halmos looks much more convenient and powerful.
 ## What's next?
 The next challenge is [The-rewarder](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/the-rewarder)
