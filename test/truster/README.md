@@ -442,6 +442,7 @@ p_v_uint8_88f0351_18 = 0x0000000000000000000000000000000000000000000000000000000
 p_value_uint256_a28c1c2_16 = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff 
 ```
 Here is the same `permit`, but this time we entered it from under `flashLoan()`. Interestingly, we noticed here: if you pass the `amount` to `flashLoan()` as `0`, the transaction will still go through, and nothing needs to be returned.
+
 And only for the third time, finally, Halmos did find a solution to this problem. Although it was spinning nearby :D 
 ```javascript
 Counterexample:
@@ -508,6 +509,7 @@ Passed! Halmos successfully solved this problem as well.
 ## Fuzzing time!
 ### Foundry
 Let's start with Foundry invariant testing. For "fairness" sake, we'll also give it plenty of time to run.
+
 Foundry.toml:
 ```javascript
 ...
@@ -525,7 +527,7 @@ function invariant_isSolved() public {
     assert(token.balanceOf(address(pool)) >= TOKENS_IN_POOL);
 }
 ```
-As an invariant, the criterion "Can we manipulate the balance of the pool in a downward direction at all?" was selected. Try it:
+As an invariant, the criterion "Can we decrease the balance of the pool at all?" was selected. Try it:
 ```javascript
 $ forge test -vvvvv --mp test/truster/Truster_Fuzz.t.sol
 ...
