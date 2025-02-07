@@ -7,7 +7,7 @@ import {ISimpleGovernance} from "./ISimpleGovernance.sol";
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import "lib/Cheats.sol";
 
-contract SimpleGovernance is ISimpleGovernance, Cheats {
+contract SimpleGovernance is ISimpleGovernance, FoundryCheats {
     using Address for address;
 
     uint256 private constant ACTION_DELAY_IN_SECONDS = 2 days;
@@ -69,7 +69,7 @@ contract SimpleGovernance is ISimpleGovernance, Cheats {
     // symbolic version
     
     function executeAction(uint256 actionId) external payable returns (bytes memory) {
-        vm.assume(actionId == 1);
+        _vm.assume(actionId == 1);
         if (!_canBeExecuted(actionId)) {
             revert CannotExecute(actionId);
         }
@@ -79,7 +79,7 @@ contract SimpleGovernance is ISimpleGovernance, Cheats {
 
         emit ActionExecuted(actionId, msg.sender);
 
-        vm.assume(actionToExecute.target != address(0xaaaa0006));
+        _vm.assume(actionToExecute.target != address(0xaaaa0006));
         return actionToExecute.target.functionCallWithValue(actionToExecute.data, actionToExecute.value);
     }
 

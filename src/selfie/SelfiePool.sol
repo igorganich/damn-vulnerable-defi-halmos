@@ -9,7 +9,7 @@ import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {SimpleGovernance} from "./SimpleGovernance.sol";
 import "lib/Cheats.sol";
 
-contract SelfiePool is IERC3156FlashLender, ReentrancyGuard, Cheats {
+contract SelfiePool is IERC3156FlashLender, ReentrancyGuard, FoundryCheats {
     bytes32 private constant CALLBACK_SUCCESS = keccak256("ERC3156FlashBorrower.onFlashLoan");
 
     IERC20 public immutable token;
@@ -76,7 +76,7 @@ contract SelfiePool is IERC3156FlashLender, ReentrancyGuard, Cheats {
         nonReentrant
         returns (bool)
     {
-        vm.assume(address(_receiver) == address(0xaaaa0006)); // SymbolicAttacker
+        _vm.assume(address(_receiver) == address(0xaaaa0006)); // SymbolicAttacker
         if (_token != address(token)) {
             revert UnsupportedCurrency();
         }

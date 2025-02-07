@@ -9,6 +9,8 @@ import {Safe} from "safe-smart-account/contracts/Safe.sol";
 import {SafeProxy} from "safe-smart-account/contracts/proxies/SafeProxy.sol";
 import {IProxyCreationCallback} from "safe-smart-account/contracts/proxies/IProxyCreationCallback.sol";
 
+
+import {Test, console} from "forge-std/Test.sol";
 /**
  * @notice A registry for Safe multisig wallets.
  *         When known beneficiaries deploy and register their wallets, the registry awards tokens to the wallet.
