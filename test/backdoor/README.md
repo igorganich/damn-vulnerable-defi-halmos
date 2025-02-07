@@ -616,7 +616,7 @@ This completely removes the timeout for the branching solver.
 
 However, on the other hand, the speed of operations has significantly decreased. From `~29000` operations per second, the speed dropped to `~8000` on my machine. That is why a more correct solution would be to calibrate the timeout value for your working machine, which will allow Halmos to work stably from run to run, while not significantly slowing down the speed of operations.
 
-But I will use `0` as an expensive but stable solution to demonstrate the capabilities of Halmos.
+I will use `0` anyway as an expensive but stable solution to demonstrate the capabilities of Halmos. But, again, this option should be used wisely. For example, if you run the test for the previous [selfie](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/selfie#symbolicattacker-preload) challenge with this parameter, it almost completely kills the performance and the solution is not found for hours.
 ### create2 during test
 In this challenge, we have a unique feature: the logic of the test is based on the fact that new contracts will be created during the test.
 ```soliidty
