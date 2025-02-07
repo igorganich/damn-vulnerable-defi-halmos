@@ -425,7 +425,7 @@ CALL SafeProxyFactory::createProxyWithCallback(...)
         REVERT OwnerIsNotABeneficiary ((error: Revert())
     ...
 ```
-This revert is worth our attention, because at the moment all the code of this function that follows this revert is blocked. This revert happens 100% of the time if it reaches this point.
+This revert is worth our attention, because at the moment all the code of this function that follows this revert is blocked. This revert happens 100% of the time if it reaches this point (At least on my weaker PC).
 ```solidity
 function proxyCreated(SafeProxy proxy, address singleton, bytes calldata initializer, uint256) external override {
 ...
@@ -606,9 +606,9 @@ $ halmos --solver-timeout-assertion 0 --function check_backdoor --loop 100
 ```
 So much better! The code below is now unlocked as Halmos can see the scenario where `owner` is, for example **Alice** with address `0xcafe0003`.
 ### solver-timeout-branching halmos option
-Now let's move on to an important `--solver-timeout-branching` parameter of Halmos. `OwnerIsNotABeneficiary` is not the only place in this challenge where the solver can behave unstable (even on a powerful CPU). If you examine several different logs with full traces of all paths that were made in different runs, you can see that they differ a lot. Halmos starts to run erratically, especially if the working machine is overloaded: entire functions have been ignored. This is a clear sign that the solver does not cope with **branching**. Simply put: every time Halmos encounters a branching statement (for example `if()`), it runs a solver that determines whether the statement is **true** or **false**. And, unfortunately, sometimes the solver cannot calculate it quickly (especially in such complex setups with an overloaded number of symbolic variables). Because of this, it does not fit into the timeout allocated to it (1 ms is default timeout), and branching does not occur in a correct way. 
+Now let's move on to an important `--solver-timeout-branching` parameter of Halmos. `OwnerIsNotABeneficiary` is not the only place in this challenge where the solver can behave unstable (even on a powerful CPU). If you examine several different logs with full traces of all paths that were made in different runs, you can see that they differ a lot. Halmos starts to run non-deterministically, especially if the working machine is overloaded: entire functions have been ignored. This is a clear sign that the solver does not cope with **branching**. Simply put: every time Halmos encounters a branching statement (for example `if()`), it runs a solver that determines whether the statement is **true** or **false**. And, unfortunately, sometimes the solver cannot calculate it quickly (especially in such complex setups with an overloaded number of symbolic variables). Because of this, it does not fit into the timeout allocated to it (1 ms is default timeout), and branching does not happen as we would like. In this case, Halmos can start processing paths that are mathematically known to be impossible. Normally, this isn't a big problem, but if we have a VERY abstraction overloaded setup that is vulnerable to path explosion, we can spend too much time (even hours) on such paths and not even get around to looking at valid, useful paths during the test, because it will be TOO LONG. Therefore, we need some mechanism in which we will sacrifice time for more accurate branching, gaining time for considering only valid paths!
 
-The solution is actually quite simple, but expensive. We simply add another startup parameter:
+So, The solution is actually quite simple, but expensive. We simply add another startup parameter:
 ```javascript
 --solver-timeout-branching 0
 ```
@@ -803,7 +803,7 @@ WARNING  Counterexample (potentially invalid):
              p_value_uint256_41861fd_12 = 0x0000000000000000000000000000000000000000000000000000000000000000
              ...
 ```
-This counterexample contains a lot of "trash" information, but you can extract the essence of the bug from it. Anyone can create a **Safe** wallet for **Alice**. But at the same time, during creation, an attacker can call absolutely any code on behalf of **Alice's** **SafeProxy**, using `setup()` and passing the appropriate code as an `initializer`. So Halmos forced **SafeProxy** to execute `approve` for some `symbolic_spender`, thereby breaking the invariant for the absence of `allowance`. 
+This counterexample contains a lot of noise, but you can extract the essence of the bug from it. Anyone can create a **Safe** wallet for **Alice**. But at the same time, during creation, an attacker can call absolutely any code on behalf of **Alice's** **SafeProxy**, using `setup()` and passing the appropriate code as an `initializer`. So Halmos forced **SafeProxy** to execute `approve` for some `symbolic_spender`, thereby breaking the invariant for the absence of `allowance`. 
 This, in fact, is enough for the attack scenario to become obvious: when creating **Safe** wallets for **Alice**, **Bob**, **Charlie** and **David**, we make an `approve` for a contract that we control and withdraw funds from the newly created wallet.
 
 Note that using the **Safe** contract as a proxy for this attack is optional. It's just that Halmos found such a way.
