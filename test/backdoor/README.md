@@ -896,4 +896,4 @@ According to tradition, this should be some effort "to fit a square peg into a r
 2. It is very convenient and probably most correct to handle symbolic `delegatecalls` through such special `handle_delegatecall` approach as shown in the article.
 3. On the example of `owners` list and **SafeProxy's** `fallback`, sometimes it is necessary to change the very logic of implementation of some features of target contracts so that Halmos can cope with them.
 4. Once again, we make sure that checking your custom invariants based on the business logic of target contracts is a good idea. Thanks to the addition of such an invariant (`allowance` invariant), we completed the task in one symbolic transaction.
-5. Halmos can sometimes behave erratically under high load. Using non-optimistic options can help make Halmos work more deterministic.
+5. Halmos can sometimes behave non-deterministically under high load. Using non-optimistic options can help make Halmos work more deterministic.
