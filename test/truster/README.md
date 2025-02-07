@@ -2,22 +2,22 @@
 ## Halmos version
 halmos 0.2.1.dev16+g1502e46 was used in this article
 ## Foreword
-It is strongly assumed that the reader is familiar with the previous article on solving ["Unstoppable"](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/unstoppable), since the main ideas here are largely repeated and we will not dwell on them again. It should also be clearly stated that we have postponed the ["Naive-receiver"](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/naive-receiver) solution for now, because it is in "Truster" that further necessary techniques for the "Naive-receiver" solution are described. In order not to mislead the reader and not to rush ahead, this order of presentation of the material was chosen.
+It is strongly assumed that the reader is familiar with the previous article on solving [Unstoppable](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/unstoppable), since the main ideas here are largely repeated and we will not dwell on them again. It should also be clearly stated that we have postponed the [Naive-receiver](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/naive-receiver) solution for now, because it is in "Truster" that further necessary techniques for the "Naive-receiver" solution are described. In order not to mislead the reader and not to rush ahead, this order of presentation of the material was chosen.
 ## Idea overview
-Based on what we already know, we will again try to make an attacker contract that would symbolically execute some transaction and hope that this will lead to the attack we need. But will it be enough this time?
+Based on what we already know, we will again try to make a **SymbolicAttacker** contract that would symbolically execute some transaction and hope that this will lead to the attack we need. But will it be enough this time?
 ## Preparation for the attack
 ### Common prerequisites 
-1. Copy Truster.t.sol file to TrusterHalmos.t.sol. All Halmos-related changes should be done here.
-2. Rename **"test_truster()"** to **"check_truster()"**, so Halmos will execute this test symbolically.
-3. Avoid using **makeAddr()** cheatcode:
+1. Copy **Truster.t.sol** file to **TrusterHalmos.t.sol**. All Halmos-related changes should be done here.
+2. Rename `test_truster()` to `check_truster()`, so Halmos will execute this test symbolically.
+3. Avoid using `makeAddr()` cheatcode:
     ```solidity
     address deployer = address(0xcafe0000);
     address player = address(0xcafe0001);
     address recovery = address(0xcafe0002);
     ```
-4. vm.getNonce() is unsupportable cheat-code. However, we can be sure that the player will perform only one transaction, since all the work will be done under SymbolicAttacker anyway. Let's remove this check.
+4. `vm.getNonce()` is an unsupported cheatcode. However, we can be sure that the player will perform only one transaction, since all the work will be done under **SymbolicAttacker** anyway. Let's remove this check.
 ### Deploying SymbolicAttacker contract
-We still have the same attack technique through the SymbolicAttacker contract. However, this time we have nothing to transfer to it - the player has no additional resources, so the deployment will look a little easier. Also, don't forget to print all the addresses of contracts - this is very useful information. 
+We still have the same attack technique through the **SymbolicAttacker** contract. However, this time we have nothing to transfer to it - the `player` has no additional resources, so the deployment will look a little easier. Also, don't forget to print all the addresses of contracts - this is very useful information. 
 ```solidity
 function check_truster() public checkSolvedByPlayer {
     SymbolicAttacker attacker = new SymbolicAttacker();
@@ -91,7 +91,7 @@ Trace:
             ↩ REVERT 0x (error: Revert())
 ...
 ```
-Let's analyze this reverted path, since this is an unpredictable revert from non-view function.
+Let's analyze this reverted path, since this is an unexpected **revert** from non-view function.
 In general, we are interested in these lines:
 ```javascript
 - Extract(0x31f, 0x300, halmos_data_bytes_80d9faf_02) == 0xab19e0c0
@@ -99,7 +99,7 @@ In general, we are interested in these lines:
 CALL 0xaaaa0003::Extract(halmos_data_bytes_80d9faf_02())(Extract(halmos_data_bytes_80d9faf_02()))
 ↩ REVERT 0x (error: Revert())
 ```
-**0xaaaa0003** is the pool address. **0xab19e0c0** is the **flashLoan** function selector:
+`0xaaaa0003` is the address of `pool`. `0xab19e0c0` is the `flashLoan()` function selector:
 ```javascript
 $ cast 4b 0xab19e0c0
 flashLoan(uint256,address,address,bytes)
@@ -121,14 +121,14 @@ $ halmos --solver-timeout-assertion 0 --function check_truster
 WARNING:halmos:Encountered symbolic CALLDATALOAD offset: 4 + Extract(79199, 78944, halmos_data_bytes_8bdc959_02)
 Symbolic test result: 0 passed; 1 failed; time: 3.90s
 ```
-Hmm, something new. What this warning actually means is that we're passing some calldata bytes to the function as a parameter, but we're doing it via a symbolic call. In simple words, Halmos does not understand where to put "calldata from parameter" in our symbolic calldata and throws an error. 
-Let's not delay, it is obvious that this function is our "flashLoan". Its 4th parameter is **"bytes calldata data"**:
+Hmm, something new. What this warning actually means is that we're passing some calldata bytes to the function as a parameter, but we're doing it via a symbolic call. In simple words, Halmos does not understand where to put **calldata as a parameter** in our symbolic calldata and throws an **error**. 
+Let's not delay, it is obvious that this function is our `flashLoan()`. Its 4th parameter is `bytes calldata data`:
 ```solidity
 contract TrusterLenderPool is ReentrancyGuard {
 ...
 function flashLoan(uint256 amount, address borrower, address target, bytes calldata data)
 ```
-Fortunately, Halmos provides a special cheat-code for such cases: svm.createCalldata(). All we need to generate valid calldata is the contract type passed as a parameter to this cheat-code. One of the most obvious ways to use it in our attacker is this piece of code:
+Fortunately, Halmos provides a special cheat-code for such cases: `svm.createCalldata()`. All we need to generate valid calldata is the contract type name passed as a parameter to this cheat-code. One of the most obvious ways to use it in our **SymbolicAttacker** is this piece of code:
 ```solidity
 contract SymbolicAttacker is Test, SymTest {
     function attack() public {
@@ -167,7 +167,7 @@ Trace:
                 ↩ CALLDATALOAD 0x (error: NotConcreteError('symbolic CALLDATALOAD offset: 4 + Extract(7391, 7136, p_data_bytes_334a71c_07)'))
 ...
 ```
-The error is some symbolic call in **TrusterLenderPool::flashLoan()** function:
+The error is some symbolic call in `TrusterLenderPool::flashLoan()` function:
 ```solidity
 function flashLoan(uint256 amount, address borrower, address target, bytes calldata data)
 ...
@@ -176,7 +176,7 @@ function flashLoan(uint256 amount, address borrower, address target, bytes calld
     target.functionCall(data);
 }
 ```
-Yes, since the **data** parameter also turned out to be symbolic, we got into the same pattern again and got the same error. However, this time, knowing that we can get to a symbolic call of a symbolic address in any contract, we will use a more universal solution!
+Yes, since the `data` parameter also turned out to be symbolic, we got into the same pattern again and got the same error. However, this time, knowing that we can get to a symbolic call of a symbolic address in any contract, we will use a more universal solution!
 ## Global storage
 Let's create a library global storage contract that can be accessed from anywhere:
 ```solidity
@@ -223,7 +223,7 @@ contract GlobalStorage is SymTest {
 }
 ```
 
-We will not dwell on the implementation details of this contract. I will only say that this is a contract in which you can store address->contract name pairs. And also with its help you can conveniently brute force addresses symbolically. It is easier to show how to use it in practice. First, let's prepare Global Storage in TrusterHalmos.t.sol:
+We will not dwell on the implementation details of this contract. I will only say that this is a contract in which you can store `address => <contract name>` pairs. And also with its help you can conveniently brute force addresses symbolically. It is easier to show how to use it in practice. First, let's prepare **GlobalStorage** in TrusterHalmos.t.sol:
 ```solidity
 ...
 import "lib/GlobalStorage.sol";
@@ -417,7 +417,7 @@ p_to_address_8272409_34 = 0x0000000000000000000000000000000000000000000000000000
 p_v_uint8_49e43a7_10 = 0x0000000000000000000000000000000000000000000000000000000000000000
 p_value_uint256_d5bb651_08 = 0x80000000000000000000000000000000000000000000005000200e0000000000
 ```
-Wow, Halmos thinks an attacker can call the [permit](https://docs.openzeppelin.com/contracts/4.x/api/token/erc20#IERC20Permit-permit-address-address-uint256-uint256-uint8-bytes32-bytes32-) function from **ERC20** with pool's signature, thereby allowing to call **transferFrom**, sending all funds to the recovery account.  The problem is that the attacker does not have a private key from the pool, so he cannot craft such a function call. Obviously, we cannot use symbolic analysis to crack the cryptography of signatures. And the null bytes provided by Halmos for the v, r and s parameters confirm this. Therefore, this is, unfortunately, a fake solution.
+Wow, Halmos thinks an attacker can call the [permit](https://docs.openzeppelin.com/contracts/4.x/api/token/erc20#IERC20Permit-permit-address-address-uint256-uint256-uint8-bytes32-bytes32-) function from **ERC20** with pool's signature, thereby allowing to call `transferFrom()`, sending all funds to the `recovery` account.  The problem is that the `attacker` does not have a private key from the `pool`, so he cannot craft such a function call. Obviously, we cannot use symbolic analysis to crack the cryptography of signatures. And the null bytes provided by Halmos for the `v`, `r` and `s` parameters confirm this. Therefore, this is, unfortunately, a fake solution.
 The situation is similar with the second counterexample:
 ```javascript
 Counterexample:
@@ -441,7 +441,8 @@ p_to_address_9bc8f39_42 = 0x0000000000000000000000000000000000000000000000000000
 p_v_uint8_88f0351_18 = 0x0000000000000000000000000000000000000000000000000000000000000000
 p_value_uint256_a28c1c2_16 = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff 
 ```
-Here is the same **permit**, but this time we entered it from under **flashLoan**. Interestingly, we noticed here: if you pass the amount to **flashLoan** as 0, the transaction will still go through, and nothing needs to be returned.
+Here is the same `permit`, but this time we entered it from under `flashLoan()`. Interestingly, we noticed here: if you pass the `amount` to `flashLoan()` as `0`, the transaction will still go through, and nothing needs to be returned.
+
 And only for the third time, finally, Halmos did find a solution to this problem. Although it was spinning nearby :D 
 ```javascript
 Counterexample:
@@ -460,7 +461,7 @@ p_spender_address_429fd9d_12 = 0x00000000000000000000000000000000000000000000000
 p_target_address_de4b479_06 = 0x00000000000000000000000000000000000000000000000000000000aaaa0003
 p_to_address_50e8baf_42 = 0x00000000000000000000000000000000000000000000000000000000cafe0002 
 ```
-Of course, we call **flashLoan** with the parameter **amount=0**, force the pool inside flashLoan to call **approve** all tokens for attacker. And then we just make **transferFrom** pool to recovery the second transaction.
+Of course, we call `flashLoan` with the parameter `amount=0`, force the `pool` during flashLoan to call `approve()` of all tokens for attacker. And then we just make `transferFrom()` `pool` to `recovery` as the second transaction.
 ## Using a counterexample
 We need these addresses in forge:
 ```javascript
@@ -508,6 +509,7 @@ Passed! Halmos successfully solved this problem as well.
 ## Fuzzing time!
 ### Foundry
 Let's start with Foundry invariant testing. For "fairness" sake, we'll also give it plenty of time to run.
+
 Foundry.toml:
 ```javascript
 ...
@@ -525,7 +527,7 @@ function invariant_isSolved() public {
     assert(token.balanceOf(address(pool)) >= TOKENS_IN_POOL);
 }
 ```
-As an invariant, the criterion "Can we manipulate the balance of the pool in a downward direction at all?" was selected. Try it:
+As an invariant, the criterion "Can we decrease the balance of the pool at all?" was selected. Try it:
 ```javascript
 $ forge test -vvvvv --mp test/truster/Truster_Fuzz.t.sol
 ...
@@ -536,7 +538,7 @@ $ forge test -vvvvv --mp test/truster/Truster_Fuzz.t.sol
 [6974] DamnValuableToken::transfer(0x5BE45f33883Ce9E32a648b77F365b4A292C360cE, 0)
 ...
 ```
-Nothing. Even no successful transaction using **"flashLoan"**. So, I decided to give the fuzzer a big tip:
+Nothing. Even no successful transaction using `flashLoan()`. So, I decided to give the fuzzer a big tip:
 ```solidity
 // Fuzz flashloan function
 
@@ -592,7 +594,7 @@ function __flashLoan(uint256 amount, address borrower, bool is_approve, address 
     return true;
 }
 ```
-Here, it is enough to pass is **false = true**, **to** as the address of the player, and a rather large **amount_to_approve** to the fuzzer. And perform **transferFrom** with another transaction. Let's try:
+Here, it is enough to pass is `is_approve = true`, `to` as the address of the `player`, and a rather large `amount_to_approve` to the fuzzer. And perform `transferFrom()` with another transaction. Let's try:
 ```javascript
 $ forge test -vvvvv --mp test/truster/Truster_Fuzz.t.sol
 ...
@@ -608,7 +610,7 @@ $ forge test -vvvvv --mp test/truster/Truster_Fuzz.t.sol
 ...
 Suite result: ok. 1 passed; 0 failed; 0 skipped; finished in 1644.57s (1644.57s CPU time)
 ```
-All transaction sequences with **"flashLoan->approve"** did not lead to anything, because some random addresses, which are not even deployed, were always chosen as the **"to"** parameter. We could still experiment with hints, but in my opinion such logic of the fuzzer is already too weak. Even if the solution exist, then we still have to twist the fuzzer logic a lot to achieve an acceptable result. 
+All transaction sequences with `flashLoan()`->`approve()` did not lead to anything, because some random addresses, which are not even deployed, were always chosen as the `to` parameter. We could still experiment with hints, but in my opinion such logic of the fuzzer is already too weak. Even if the solution exist, then we still have to twist the fuzzer logic a lot to achieve an acceptable result.
 So let's try something different.
 ### Echidna
 I chose Echidna as another fuzzing engine. Echidna-styled invariant testing contract:
@@ -653,7 +655,7 @@ sender: ['0xcafe0002']
 allContracts: true
 workers: 8
 ```
-First, let's try again with a "clean" TrusterLenderPool:
+First, let's try again with a "clean" **TrusterLenderPool**:
 ```javascript
 $ forge build
 ...
@@ -664,7 +666,7 @@ Unique instructions: 2864
 Corpus size: 15
 Seed: 5278472965973577621
 ```
-Unfortunately, nothing. Maybe with a hint, Echidna will find a solution? (Second "hinted" flashLoan function was used):
+Unfortunately, nothing. Maybe with a hint, Echidna will find a solution? (Second "hinted" `flashLoan()` function was used):
 ```javascript
 $ forge build
 ...
@@ -676,7 +678,7 @@ echidna_testSolved: failed!
         DamnValuableToken.transferFrom(0x62d69f6867a0a084c6d313943dc22023bc263691,0x0,1)
 ...
 ```
-Hooray! In this case, **Echidna** did find a sequence that breaks the invariant. However, we still gave a very large hint for the fuzzer. Therefore, let's consider all possible calls that could be made from under **flashLoan** (At least those that are in the setup). Ladies and gentlemen, meet FRANKENSTEIN:
+Hooray! In this case, **Echidna** did find a sequence that breaks the invariant. However, we still gave a very large hint for the fuzzer. Therefore, let's consider all possible calls that could be made from under `flashLoan()` (At least those that are in the setup). Ladies and gentlemen, meet FRANKENSTEIN:
 ```solidity
 function __flashLoan(uint256 amount, address borrower,
                         bool is_token,
@@ -731,7 +733,7 @@ Error: Compiler run failed:
 Error: Compiler error (/solidity/libsolidity/codegen/LValue.cpp:51):Stack too deep. ...
 ...
 ```
-But we can rewrite it using the same idea. **permit** and **flashLoan** calls are deleted because they are uncallable anyway:
+But we can rewrite it using the same idea. `permit()` and `flashLoan()` calls are deleted because they are uncallable anyway:
 ```solidity
 function __flashLoan(uint256 amount, address borrower,
 		    bool is_approve, bool is_transfer, bool is_tranferFrom,
@@ -773,8 +775,7 @@ echidna_testSolved: failed!
 ```
 It's alive! Well, with such changes, we managed to make fuzzing produce some kind of acceptable result.
 ## Conclusions
-1. Sometimes, one transaction is not enough for an attack. Symbolically perform 2 transactions in 
-such tasks generally possible for Halmos.
+1. Sometimes, one transaction is not enough for an attack. Symbolically perform 2 transactions in such tasks generally possible for Halmos.
 2. One of the main conditions for successful preparation of the symbolic test is to make sure that the maximum number of paths is covered. If there is a way to simply increase this number, it should be done!
 3. If the target contract needs some changes, don't be afraid to make them. The main thing is to understand what we are doing so as not to affect the result.
 4. You have to be careful with cryptographic functions, as automatic tools do not handle them well.

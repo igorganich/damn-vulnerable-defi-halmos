@@ -10,6 +10,13 @@ A comparison with fuzzing techniques using Foundry fuzzing and Echidna in the co
 
 **WARNING**: This repository is still in progress, so there may not be solutions for all problems.
 
+# Goals
+As a result of this work, I expect to achieve the following goals:
+1. Learn how to build symbolic execution tests in Halmos, adapt target contracts for symbolic testing
+2. Identify the limits of using Halmos, find ways to bypass them using heuristics and optimizations
+3. Accumulate techniques to find bugs and solve complex CTF problems in practice
+4. Make some "benchmark" of Halmos comparing it with fuzzing engines
+
 # Who might be interested?
 1. Auditors, EVM Security Specialists
 2. CTFers
