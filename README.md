@@ -37,8 +37,9 @@ For reasons of ease of presentation of new material, new techniques, etc., the o
 4. [Side-entrance](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/side-entrance)
 5. [The-rewarder](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/the-rewarder)
 6. [Selfie](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/selfie)
-7. TBD
-8. ...
+7. [Backdoor](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/backdoor)
+8. TBD
+9. ...
 
 # Contributions
 Don't be afraid to make pull requests if you have any improvement ideas.

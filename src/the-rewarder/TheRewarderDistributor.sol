@@ -27,7 +27,7 @@ struct Claim {
 /**
  * An efficient token distributor contract based on Merkle proofs and bitmaps
  */
-contract TheRewarderDistributor is Cheats {
+contract TheRewarderDistributor is FoundryCheats, HalmosCheats {
 
     Claim[] public storageInputClaims;
     IERC20[] public storageInputTokens;
@@ -196,7 +196,7 @@ contract TheRewarderDistributor is Cheats {
             uint256 wordPosition = inputClaim.batchNumber / 256;
             uint256 bitPosition = inputClaim.batchNumber % 256;
 
-            address symbolicInputToken = svm.createAddress("SymbolicInputToken");
+            address symbolicInputToken = _svm.createAddress("SymbolicInputToken");
             if (msg.sender != address(0x44E97aF4418b7a17AABD8090bEA0A471a366305C))
             {
                 symbolicInputToken = address(inputTokens[inputClaim.tokenIndex]);
@@ -222,9 +222,9 @@ contract TheRewarderDistributor is Cheats {
             if (msg.sender == address(0x44E97aF4418b7a17AABD8090bEA0A471a366305C)) // player address
             {
                 if (address(token) == address(0xaaaa0003)) // If DVT token
-                    vm.assume(inputClaim.amount == 11524763827831882);
+                    _vm.assume(inputClaim.amount == 11524763827831882);
                 else if (address(token) == address(0xaaaa0004)) // If WETH token
-                    vm.assume(inputClaim.amount == 1171088749244340);
+                    _vm.assume(inputClaim.amount == 1171088749244340);
             }
 
             //bytes32 leaf = keccak256(abi.encodePacked(msg.sender, inputClaim.amount));
