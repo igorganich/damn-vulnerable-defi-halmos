@@ -61,7 +61,7 @@ contract ClimberChallenge is Test, SymTest {
         token = new DamnValuableToken();
         token.transfer(address(vault), VAULT_TOKEN_BALANCE);
 
-        glob.add_addr_name_pair(address(vault), "ClimberVault");
+        glob.add_addr_name_pair(address(vault), "ERC1967Proxy");
         glob.add_addr_name_pair(address(timelock), "ClimberTimelock");
         glob.add_addr_name_pair(address(token), "DamnValuableToken");
 
@@ -96,11 +96,13 @@ contract ClimberChallenge is Test, SymTest {
      */
     function check_climber() public checkSolvedByPlayer {
         SymbolicAttacker attacker = new SymbolicAttacker();
+        glob.set_attacker_addr(address(attacker));
         console.log("GlobalStorage\t", address(glob));
         console.log("ClimberVault\t", address(vault));
         console.log("ClimberTimelock\t", address(timelock));
         console.log("token\t\t", address(token));
         console.log("GlobalStorage\t", address(attacker));
+        attacker.attack();
     }
 
     /**

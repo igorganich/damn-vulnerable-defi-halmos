@@ -8,15 +8,20 @@ import "lib/GlobalStorage.sol";
 
 contract SymbolicAttacker is Test, SymTest {
     // We can hardcode this address for convenience
-    GlobalStorage glob = GlobalStorage(address(0xaaaa0002)); 
+    GlobalStorage glob = GlobalStorage(address(0xaaaa0002));
+    bool reent_guard = false;
 
     fallback() external payable {
+        vm.assume(reent_guard == false);
+        reent_guard = true;
+        console.log("inside fallback");
         bytes4 selector = svm.createBytes4("fallback_selector");
         vm.assume(selector == bytes4(msg.data));
         execute_tx("fallback_target");
         bytes memory retdata = svm.createBytes(1000, "fallback_retdata");// something should be returned
+        reent_guard = false;
         assembly {
-            return(add(returndata, 0x20), mload(returndata));
+            return(add(retdata, 0x20), mload(retdata))
         }
     }
 
@@ -29,6 +34,7 @@ contract SymbolicAttacker is Test, SymTest {
     }
 
     function attack() public {
+        vm.assume(msg.sender == address(0xcafe0001)); // Only player can execute it
         execute_tx("attack_target");
     }
 }

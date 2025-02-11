@@ -35,7 +35,7 @@ since the main ideas here are largely repeated and we will not dwell on them aga
         ...
         glob = new GlobalStorage();
         ...
-        glob.add_addr_name_pair(address(vault), "ClimberVault");
+        glob.add_addr_name_pair(address(vault), "ERC1967Proxy");
         glob.add_addr_name_pair(address(timelock), "ClimberTimelock");
         glob.add_addr_name_pair(address(token), "DamnValuableToken");
         ...
@@ -131,21 +131,79 @@ We begin to come up with invariants that could help us achieve some unexpected b
     ```
 ## Improvement of coverage
 ### SymbolicAttacker callback handling
-Up to this point, we have not considered scenarios where some target contract makes a symbolic `call` back to **SymbolicAttacker** by default. But on the example of the [side-entrance](https://github.com/igorganich/damn-vulnerable-defi-halmos/blob/master/test/side-entrance/README.md#callbacks), [Selfie](https://github.com/igorganich/damn-vulnerable-defi-halmos/blob/master/test/selfie/README.md#onflashloan) and [backdoor](https://github.com/igorganich/damn-vulnerable-defi-halmos/blob/master/test/backdoor/README.md#delegatecall) challenges, we can say that this is a fairly common scenario when control is passed back to the contract controlled by the attacker.
+Up to this point, we have not considered scenarios where some target contract makes a symbolic `call` back to **SymbolicAttacker** by default. But on the example of the [side-entrance](https://github.com/igorganich/damn-vulnerable-defi-halmos/blob/master/test/side-entrance/README.md#callbacks), [selfie](https://github.com/igorganich/damn-vulnerable-defi-halmos/blob/master/test/selfie/README.md#onflashloan) and [backdoor](https://github.com/igorganich/damn-vulnerable-defi-halmos/blob/master/test/backdoor/README.md#delegatecall) challenges, we can say that this is a fairly common scenario when control is passed back to the contract controlled by the attacker.
 
 Therefore, we will now add a special `fallback()` to **SymbolicAttacker**, which will be able to handle calls from other contracts:
 ```solidity
+bool reent_guard = false;
+
 fallback() external payable {
+    vm.assume(reent_guard == false);
+    reent_guard = true;
+    console.log("inside fallback");
     bytes4 selector = svm.createBytes4("fallback_selector");
     vm.assume(selector == bytes4(msg.data));
     execute_tx("fallback_target");
     bytes memory retdata = svm.createBytes(1000, "fallback_retdata");// something should be returned
+    reent_guard = false;
     assembly {
-        return(add(returndata, 0x20), mload(returndata));
+        return(add(retdata, 0x20), mload(retdata))
     }
 }
 ```
 Now let's add functionality to **GlobalStorage** to allow other contracts to call this `fallback()`:
+```solidity
+//SymbolicAttacker address
+address attacker;
+...
+function get_concrete_from_symbolic_optimized (address /*symbolic*/ addr) public 
+                                        returns (address ret, bytes memory data) 
+{
+    bytes4 selector = _svm.createBytes4("selector");
+    ...
+     _vm.assume(attacker != address(0x0));
+    if (addr == attacker)
+    {
+        data = _svm.createBytes(1000, "attacker_fallback_bytes");
+        _vm.assume(selector == bytes4(data));
+        _vm.assume(selector == bytes4(keccak256("attacker_fallback_selector()")));
+    }
+    _vm.assume(false); // Ignore cases when addr is not some concrete known address
+}
+```
+So, `check_climber()`:
+```solidity
+function check_climber() public checkSolvedByPlayer {
+    SymbolicAttacker attacker = new SymbolicAttacker();
+    glob.set_attacker_addr(address(attacker));
+    ...
+    }
+```
+### Handling proxy implementation
+Let's take a closer look at something new. In this challenge, we see for the first time upgradable contracts implemented through **ERC1967Proxy**:
+```solidity
+// Deploy the vault behind a proxy,
+// passing the necessary addresses for the `ClimberVault::initialize(address,address,address)` function
+vault = ClimberVault(
+    address(
+        new ERC1967Proxy(
+            address(new ClimberVault()), // implementation
+            abi.encodeCall(ClimberVault.initialize, (deployer, proposer, sweeper)) // initialization data
+        )
+    )
+);
+```
+Thus, we have a contract that implements 2 interfaces at once: the **ERC1967Proxy** itself and its **implementation** contract interface. Let me remind you that we store only one interface name for each address in **GlobalStorage**, so currently we do not have a mechanism to symbolically execute functions of both interfaces for such proxy.
+
+One obvious idea is to create a single **SuperInterface** that will be inherited from both interfaces. And we will pass the "**SuperInterface**" as a contract name to **GlobalStorage**:
+```solidity
+interface SuperInterface is ERC1967Proxy, ClimberVault {}
+...
+glob.add_addr_name_pair(address(vault), "SuperInterface");
+```
+However, there is a problem with this approach: upgradable contracts can change their implementation, so after a potential change of implementation contract, such a **SuperInterface** will no longer be relevant for this proxy.
+
+So, we will have a somewhat more complicated, but more universal solution to this problem:
 
 ```javascript
 

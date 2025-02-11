@@ -10,6 +10,9 @@ contract GlobalStorage is FoundryCheats, HalmosCheats {
         add_banned_function_selector(bytes4(keccak256("delegateBySig(address,uint256,uint256,uint8,bytes32,bytes32)")));
     }
 
+    //SymbolicAttacker address
+    address attacker;
+
     // uint256->address mapping to have an ability to iterate over addresses
     mapping (uint256 => address) addresses;
     mapping (address => string) names_by_addr;
@@ -23,6 +26,10 @@ contract GlobalStorage is FoundryCheats, HalmosCheats {
     function add_banned_function_selector(bytes4 selector) public {
         banned_selectors[banned_selectors_size] = selector;
         banned_selectors_size++;
+    }
+
+    function set_attacker_addr(address addr) public {
+        attacker = addr;
     }
 
     // Addresses and names information is stored using this setter
@@ -53,7 +60,7 @@ contract GlobalStorage is FoundryCheats, HalmosCheats {
                 return (ret, data);
             }
         }
-        revert(); // Ignore cases when addr is not some concrete known address
+        _vm.assume(false); // Ignore cases when addr is not some concrete known address
     }
 
     /*
@@ -63,12 +70,12 @@ contract GlobalStorage is FoundryCheats, HalmosCheats {
     function get_concrete_from_symbolic_optimized (address /*symbolic*/ addr) public 
                                         returns (address ret, bytes memory data) 
     {
+        bytes4 selector = _svm.createBytes4("selector");
         for (uint256 i = 0; i < addresses_list_size; i++) {
             if (addresses[i] == addr) {
                 string memory name = names_by_addr[addresses[i]];
                 ret = addresses[i];
                 data = _svm.createCalldata(name);
-                bytes4 selector = _svm.createBytes4("selector");
                 _vm.assume(selector == bytes4(data));
                 for (uint256 s = 0; s < banned_selectors_size; s++) {
                     _vm.assume(selector != banned_selectors[s]);
@@ -81,7 +88,14 @@ contract GlobalStorage is FoundryCheats, HalmosCheats {
                 return (ret, data);
             }
         }
-        revert(); // Ignore cases when addr is not some concrete known address
+        _vm.assume(attacker != address(0x0));
+        if (addr == attacker)
+        {
+            data = _svm.createBytes(1000, "attacker_fallback_bytes");
+            _vm.assume(selector == bytes4(data));
+            _vm.assume(selector == bytes4(keccak256("attacker_fallback_selector()")));
+        }
+        _vm.assume(false); // Ignore cases when addr is not some concrete known address
     }
 
     /*
