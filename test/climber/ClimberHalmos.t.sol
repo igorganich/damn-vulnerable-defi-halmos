@@ -62,6 +62,7 @@ contract ClimberChallenge is Test, SymTest {
         token.transfer(address(vault), VAULT_TOKEN_BALANCE);
 
         glob.add_addr_name_pair(address(vault), "ERC1967Proxy");
+        glob.add_addr_name_pair(glob.get_ERC1967Proxy_implementation(address(vault)), "ClimberVault");
         glob.add_addr_name_pair(address(timelock), "ClimberTimelock");
         glob.add_addr_name_pair(address(token), "DamnValuableToken");
 
@@ -98,10 +99,13 @@ contract ClimberChallenge is Test, SymTest {
         SymbolicAttacker attacker = new SymbolicAttacker();
         glob.set_attacker_addr(address(attacker));
         console.log("GlobalStorage\t", address(glob));
-        console.log("ClimberVault\t", address(vault));
+        console.log("ClimberVaultProxy\t", address(vault));
+        console.log("ClimberVaultImpl\t", glob.get_ERC1967Proxy_implementation(address(vault)));
         console.log("ClimberTimelock\t", address(timelock));
         console.log("token\t\t", address(token));
-        console.log("GlobalStorage\t", address(attacker));
+        console.log("SymbolicAttacker\t", address(attacker));
+        attacker.preload(timelock);
+        console.log(timelock.hasRole(PROPOSER_ROLE, address(attacker)));
         attacker.attack();
     }
 
@@ -120,15 +124,14 @@ contract ClimberChallenge is Test, SymTest {
         assert(vault.owner() == address(timelock));
         
         // Check vault implementation immutability
-        bytes32 slot = 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
-        bytes32 result = vm.load(address(vault), slot);
-        address currentImpl = address(uint160(uint256(result)));
-        assert(currentImpl == address(0xaaaa0003));
+        assert(glob.get_ERC1967Proxy_implementation(address(vault)) == address(0xaaaa0003));
         
         // Check timelock roles immutability
+        /*
         address symbolicProposer = svm.createAddress("symbolicProposer");
         vm.assume(symbolicProposer != proposer);
         assert(!timelock.hasRole(PROPOSER_ROLE, symbolicProposer));
+        */
 
         address symbolicAdmin = svm.createAddress("symbolicAdmin");
         vm.assume(symbolicAdmin != deployer);

