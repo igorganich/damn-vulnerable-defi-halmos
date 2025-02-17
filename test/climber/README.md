@@ -16,7 +16,7 @@ since the main ideas here are largely repeated and we will not dwell on them aga
 ### Common prerequisites
 1. Copy **Climber.t.sol** file to **ClimberHalmos.t.sol**.
 2. Rename `test_climber()` to `check_climber()`, so Halmos will execute this test symbolically.
-3. Avoid using **makeAddr()** cheatcode:
+3. Avoid using `makeAddr()` cheatcode:
     ```solidity
     address deployer = address(0xcafe0000);
     address player = address(0xcafe0001);
@@ -72,7 +72,7 @@ since the main ideas here are largely repeated and we will not dwell on them aga
     [console.log] ClimberVaultProxy  0x00000000000000000000000000000000000000000000000000000000aaaa0004
     [console.log] ClimberVaultImpl   0x00000000000000000000000000000000000000000000000000000000aaaa0003
     [console.log] ClimberTimelock    0x00000000000000000000000000000000000000000000000000000000aaaa0005
-    [console.log] token              0x00000000000000000000000000000000000000000000000000000000aaaa0006
+    [console.log] DamnValuableToken  0x00000000000000000000000000000000000000000000000000000000aaaa0006
     [console.log] GlobalStorage      0x00000000000000000000000000000000000000000000000000000000aaaa0007
     ```
 ### _isSolved() implementation
@@ -371,9 +371,9 @@ Now let's remember that we need to preserve the identity of the parameters of bo
 Here are some ideas on how we can solve this:
 1. Somehow modify symbolic bytes from `CreateCalldata()` so that they are also of static size and output `0s` at the end as padding.
 2. Handle separately situations with potential proxy **implementation** change.
-3. Refactor the actions functionality itself to make it more "friendly" for symbolic analysis (Say "hello" to symbolic mapping keys from [backdoor](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/backdoor#ownerisnotabeneficiary-issue)).
+3. Refactor the `operations` functionality itself to make it more "friendly" for symbolic analysis (Say "hello" to symbolic mapping keys from [backdoor](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/backdoor#ownerisnotabeneficiary-issue)).
 
-All of them have the right to exist and can potentially be used to solve this problem. However, they require a lot of work. It is easier to slightly change the principle by which `id` is calculated: instead of concatenating the entire array of bytes, we can try to concatenate only the function selector from each byte array. This selector is always of static size, `4` bytes, which will allow us to check at `execute()` whether such a set of addresses and corresponding functions has been registered (without specific parameters for these functions). Of course, we take into account that any simplification of verification can lead to false counterexamples. But, in my opinion, this should be a profitable trade-off.
+All of them have the right to exist and can potentially be used to solve this problem. However, they require a lot of work. It is easier to slightly change the principle by which `id` is calculated: instead of concatenating the entire array of bytes, we can try to concatenate only the function selector from each byte array. This selector is always of static size, `4` bytes, which will allow us to check at `execute()` whether such a set of addresses and corresponding functions has been registered (without specific parameters for these functions). Of course, we take into account that any simplification of verification may lead to false counterexamples. But, in my opinion, this should be a profitable trade-off.
 
 That's all, we've discussed the necessary topics. Let's implement it:
 ```solidity
@@ -506,6 +506,7 @@ In the setup with one symbolic attacking transaction, Halmos did not find any co
     We can do this by passing the `--default-array-lengths 3` parameter to Halmos (default value is `0, 1, 2`)
 
 We have no choice but to try each of these methods one by one:
+
 1. 
     ```solidity
     function attack() public {
@@ -647,7 +648,7 @@ function getOperationId(
     return keccak256(abi.encode(targets, values, dataElements, salt));
 }
 ```
-And... We simply cannot cope with this task. To explain this, we'll need to use a bit of mathematical language. For simplicity, let's say `abi.encode(targets, values, dataElementsSelectors, salt)` is `A`. So, `A` is the bytes array that encode all the parameters passed to `execute()`. The last parameter in `dataElements[]` array, in order to `schedule()` such `operation`, should be the same set of parameters, passed to `execute()` aka `A` again. In other words, `A` must be a part of `A` in this scenario. I don't think it's necessary to explain that this is impossible if `A` also has to contain encoded `updateDelay()` and `grantRole()`.
+And... We simply cannot cope with this task. To explain this, we'll need to use a bit of mathematical language. For simplicity, let's say `abi.encode(targets, values, dataElements, salt)` is `A`. So, `A` is the bytes array that encodes all the parameters passed to `execute()`. The last parameter in `dataElements[]` array, in order to schedule such `operation`, should be the same set of parameters, passed to `execute()` aka `A` again. In other words, `A` must be a part of `A` in this scenario. I don't think it's necessary to explain that this is impossible if `A` also has to contain encoded `updateDelay()` and `grantRole()`.
 
 So, to summarize: We encountered somewhat contradictory results. On the one hand, our simplification of the `id` calculation led to a fake counterexample. But on the other hand, an experienced auditor would notice a violation of an important [principle](https://docs.soliditylang.org/en/latest/security-considerations.html#use-the-checks-effects-interactions-pattern) of writing secure contracts even from such a result: first we validate the passed parameters, then we execute them:
 ```solidity
@@ -699,13 +700,13 @@ In `schedule()`, `operations` are stored by bytes32 key (`id`):
 operations[id].readyAtTimestamp = uint64(block.timestamp) + delay;
 operations[id].known = true;
 ```
-This id is essentially a **keccak256** hash of some complex symbolic value (this hash also behaves like a symbolic value):
+This `id` is essentially a **keccak256** hash of some complex symbolic value (this hash also behaves like a symbolic value):
 ```javascript
 f_sha3_4096(Concat(...,halmos_schedule_salt_bytes32_8b37382_249, ...))
 ```
-That is, the operation was saved using this symbolic key.
+That is, the `operation` was saved using this symbolic key.
 
-Next, in `execute()`, we have another id, constructed in a similar way:
+Next, in `execute()`, we have another `id`, constructed in a similar way:
 ```solidity
 function execute(address[] calldata targets, uint256[] calldata values, bytes[] calldata dataElements, bytes32 salt)
 {
@@ -725,12 +726,11 @@ f_sha3_4096(Concat(...,halmos_execute_salt_bytes32_ae9ed2c_76, ...))
 In order to correctly find a counterexample, you need to:
 1. Assume that the key returned in `execute()` may be equal to the key by which the data was saved in `schedule()`: 
     `sha3(complex_sym_val1) == sha3(complex_sym_val2)`
-2. Assume that if 2 hashes are the same, then the symbolic values underneath them are also the same:
+2. Assume that if 2 hashes are the same, then the symbolic values behind them are also the same:
     `(sha3(complex_sym_val1) == sha3(complex_sym_val2)) ==> (complex_sym_val1 == complex_sym_val2)`
     This is non-trivial behavior. This requires support at the engine level, and Halmos implements this logic! Otherwise, we would have to deal with constant fake hash collisions or not finding counterexamples at all.
-3. As usual, solve such a task with some solver.
 
-We can get a complete list of such implemented heuristics by analyzing the regression tests in the Halmos repository. For example, the tests about:
+We can get a complete list of such implemented heuristics by analyzing the regression tests in the Halmos repository. For example, there are tests about:
 1. [keccak256()](https://github.com/a16z/halmos/blob/5c5ca39a1ee943ad8c8dc2fe042bdea44413ed69/tests/regression/test/Sha3.t.sol#L7)
 2. [Signatures/ecrecover](https://github.com/a16z/halmos/blob/5c5ca39a1ee943ad8c8dc2fe042bdea44413ed69/tests/regression/test/Signature.t.sol)
 
@@ -789,9 +789,9 @@ contract SymbolicAttacker is Test, SymTest {
         dataElements[0] = abi.encodeWithSignature("updateDelay(uint64)", 0);
         dataElements[1] = abi.encodeWithSignature("grantRole(bytes32,address)", PROPOSER_ROLE, address(this));
         dataElements[2] = abi.encodeWithSignature("attacker_fallback_selector()");
-        timelock.execute_preload(targets, values, dataElements, salt);(targets, values, dataElements, salt);
+        timelock.execute_preload(targets, values, dataElements, salt);
         is_preload = false;
-        }   
+    }   
 ```
 ...
 ```solidity
@@ -873,7 +873,7 @@ function execute(address[] calldata targets, uint256[] calldata values, bytes[] 
         revert NotReadyForExecution(id);
     }
     */
-    operations[id].executed = true;
+    //operations[id].executed = true;
 }
 ```
 And, of course, we will remove the invariant to check the immutability of `PROPOSER_ROLE`, otherwice every transaction will be a counterexample now :D
@@ -1026,8 +1026,9 @@ Suite result: ok. 2 passed; 0 failed; 0 skipped; finished in 1.63ms (438.35µs C
 ```
 Passed!
 ## Conclusions
-1. When you need to compare 2 bytes arrays symbolically - you need to be VERY CAREFUL. There are cases when two arrays encoding the same transaction but have different hashes due to padding.
-2. Simplifying validation can be very effective for finding bugs, or at least it can help find buggy patterns. Yes, we may encounter fake counterexamples, but if that's the price to find a real one, it's worth paying.
-3. In this challenge, we again managed to "cut" the problem and "eat it in smaller pieces": first we found the privilege escalation, then the mechanism for changing the proxy implementation having these rights. However, the privilege escalation bug is atomic, indivisible in nature. Halmos also coped with it, but had to significantly expand the number of symbolic calls in the operation and wait many hours until something was found.
-4. The symbolic `fallback()` functionality for **SymbolicAttacker** turned out to be necessary to solve this challenge. This functionality should be useful for future challenges!
-5. Halmos has some effective techniques for working with cryptographic functions. It is worth understanding what Halmos can and cannot do, so that you can better predict its scope of capabilities for the current test, and, on the other hand, so that the results do not seem like "magic" :D
+1. It is important to consider the specifics of contracts during symbolic analysis. For example, the UUPS proxy implements 2 interfaces at once, which forced us to slightly change the logic of symbolic traversal of the setup.
+2. When you need to compare 2 bytes arrays symbolically - you need to be VERY CAREFUL. There are cases when two arrays encoding the same transaction but have different hashes due to padding.
+3. Simplifying validation can be very effective for finding bugs, or at least it can help find buggy patterns. Yes, we may encounter fake counterexamples, but if that's the price to find a real one, it's worth paying.
+4. In this challenge, we again managed to "cut" the problem and "eat it in smaller pieces": first we found the privilege escalation, then the mechanism for changing the proxy implementation having these rights. However, the privilege escalation bug is atomic, indivisible in nature. Halmos also coped with it, but had to significantly expand the number of symbolic calls in the operation and wait many hours until something was found.
+5. The symbolic `fallback()` functionality for **SymbolicAttacker** turned out to be necessary to solve this challenge. This functionality should be useful for future challenges!
+6. Halmos has some effective techniques for working with cryptographic functions. It is worth understanding what Halmos can and cannot do, so that you can better predict its scope of capabilities for the current test, and, on the other hand, so that the results do not seem like "magic" :D
