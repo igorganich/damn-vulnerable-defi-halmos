@@ -6,6 +6,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 import {AuthorizedExecutor} from "./AuthorizedExecutor.sol";
 
+import "forge-std/Test.sol";
 contract SelfAuthorizedVault is AuthorizedExecutor {
     uint256 public constant WITHDRAWAL_LIMIT = 1 ether;
     uint256 public constant WAITING_PERIOD = 15 days;
@@ -31,6 +32,7 @@ contract SelfAuthorizedVault is AuthorizedExecutor {
      * @param amount amount of tokens to be transferred
      */
     function withdraw(address token, address recipient, uint256 amount) external onlyThis {
+        console.log("here1");
         if (amount > WITHDRAWAL_LIMIT) {
             revert InvalidWithdrawalAmount();
         }
@@ -45,6 +47,7 @@ contract SelfAuthorizedVault is AuthorizedExecutor {
     }
 
     function sweepFunds(address receiver, IERC20 token) external onlyThis {
+        console.log("here2");
         SafeTransferLib.safeTransfer(address(token), receiver, token.balanceOf(address(this)));
     }
 
