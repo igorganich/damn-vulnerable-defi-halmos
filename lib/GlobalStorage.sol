@@ -60,7 +60,7 @@ contract GlobalStorage is FoundryCheats, HalmosCheats {
                 // and its implementation contract
                 if (keccak256(bytes(name)) == keccak256(bytes("ERC1967Proxy"))) {
                     bool is_implementation = _svm.createBool("is_implementation");
-                    if (is_implementation == true) {
+                    if (is_implementation) {
                         address imp = get_ERC1967Proxy_implementation(addresses[i]);
                         name = names_by_addr[imp];
                     }
