@@ -164,7 +164,9 @@ We begin to come up with invariants that could help us achieve some unexpected b
    ...
    }
    ```
-   So, let's check if we can give someone a new role in `timelock`:
+   We are interested in the `PROPOSER` and `ADMIN` roles.
+
+   So, let's see if we can give someone a new role who didn't have one before in `timelock`:
     ```solidity
     // Check timelock roles immutability
     address symbolicProposer = svm.createAddress("symbolicProposer");
