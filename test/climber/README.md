@@ -94,18 +94,77 @@ We begin to come up with invariants that could help us achieve some unexpected b
     address symbolicSpender = svm.createAddress("symbolicSpender");
     assert (token.allowance(address(vault), symbolicSpender) == 0);
     ```
-3. We are checking if we can somehow manipulate `_sweeper` and `owner` of vault:
+3. The `vault` contract has 2 interesting roles: `sweeper` and `owner`. Essentially, these are just variables of type `address` that can change:
+    ```solidity
+    address private _sweeper;
+
+    modifier onlySweeper() {
+        if (msg.sender != _sweeper) {
+            revert CallerNotSweeper();
+        }
+        _;
+    }
+    ```
+    ```solidity
+    modifier onlyOwner() {
+        _checkOwner();
+        _;
+    }
+
+    /**
+     * @dev Returns the address of the current owner.
+     */
+    function owner() public view virtual returns (address) {
+        OwnableStorage storage $ = _getOwnableStorage();
+        return $._owner;
+    }
+
+    /**
+     * @dev Throws if the sender is not the owner.
+     */
+    function _checkOwner() internal view virtual {
+        if (owner() != _msgSender()) {
+            revert OwnableUnauthorizedAccount(_msgSender());
+        }
+    }
+    ```
+    Let's see if we can change this somehow:
     ```solidity
     // Check vault roles immutability:
     assert(vault.getSweeper() == sweeper);
     assert(vault.owner() == address(timelock));
     ```
-4. Since the `vault` from the setup is essentially a **UUPS** proxy contract, we can check whether the very **implementation** of this proxy cannot be manipulated in any way:
+5. Since the `vault` from the setup is essentially a **UUPS** proxy contract, we can check whether the very **implementation** of this proxy cannot be manipulated in any way:
     ```solidity
     // Check vault implementation immutability
     assert(glob.get_ERC1967Proxy_implementation(address(vault)) == address(0xaaaa0003));
     ```
-5. Checking if we can give someone a new role in **ClimberTimelock**:
+6. `timelock` also has a role system, but it is slightly different from `vault`. The main difference is that multiple addresses can have the same role:
+   ```solidity
+   import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
+   
+   abstract contract ClimberTimelockBase is AccessControl {
+   ...
+   }
+   ```
+   ```solidity
+   contract ClimberTimelock is ClimberTimelockBase {
+   ...
+       constructor(address admin, address proposer) {
+        _setRoleAdmin(ADMIN_ROLE, ADMIN_ROLE);
+        _setRoleAdmin(PROPOSER_ROLE, ADMIN_ROLE);
+
+        _grantRole(ADMIN_ROLE, admin);
+        _grantRole(ADMIN_ROLE, address(this)); // self administration
+        _grantRole(PROPOSER_ROLE, proposer);
+
+        delay = 1 hours;
+        is_preload = true;
+    }
+   ...
+   }
+   ```
+   So, let's check if we can give someone a new role in `timelock`:
     ```solidity
     // Check timelock roles immutability
     address symbolicProposer = svm.createAddress("symbolicProposer");
