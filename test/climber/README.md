@@ -209,7 +209,7 @@ function get_addr_data_selector(address /*symbolic*/ addr) private view
                 // and its implementation contract
                 if (keccak256(bytes(name)) == keccak256(bytes("ERC1967Proxy"))) {
                     bool is_implementation = _svm.createBool("is_implementation");
-                    if (is_implementation == true) {
+                    if (is_implementation) {
                         address imp = get_ERC1967Proxy_implementation(addresses[i]);
                         name = names_by_addr[imp];
                     }
@@ -239,11 +239,13 @@ Now the full functionality of the symbolic transaction brute forcing:
             if (addresses[i] == addr) {
                 string memory name = names_by_addr[addresses[i]];
                 ret = addresses[i];
-                // Proxy contracts could be accessed by 2 interfaces: ERC1967Proxy itself 
-                // and its implementation contract
+                /*
+                * Using the symbolic boolean variable "is_implementation" forces Halmos to separately consider
+                * 2 cases: where the interface of the proxy itself or its implementation is used.
+                */
                 if (keccak256(bytes(name)) == keccak256(bytes("ERC1967Proxy"))) {
                     bool is_implementation = _svm.createBool("is_implementation");
-                    if (is_implementation == true) {
+                    if (is_implementation) {
                         address imp = get_ERC1967Proxy_implementation(addresses[i]);
                         name = names_by_addr[imp];
                     }
