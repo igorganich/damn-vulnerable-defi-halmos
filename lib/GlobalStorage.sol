@@ -60,7 +60,7 @@ contract GlobalStorage is FoundryCheats, HalmosCheats {
                 * Using the symbolic boolean variable "is_implementation" forces Halmos to separately consider
                 * 2 cases: where the interface of the proxy itself or its implementation is used.
                 */
-                if (keccak256(name) == keccak256("ERC1967Proxy")) {
+                if (keccak256(bytes(name)) == keccak256("ERC1967Proxy")) {
                     bool is_implementation = _svm.createBool("is_implementation");
                     if (is_implementation) {
                         address imp = get_ERC1967Proxy_implementation(addresses[i]);
