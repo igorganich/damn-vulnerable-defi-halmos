@@ -901,7 +901,7 @@ and other.
 
 ## preload implementation
 We will add a preload (like in [selfie](https://github.com/igorganich/damn-vulnerable-defi-halmos/tree/master/test/selfie#symbolicattacker-preload)) to unlock a `PROPOSER_ROLE` privilege and test new scenarios.
-```solidiity
+```solidity
 function check_climber() public checkSolvedByPlayer {
     ...
     attacker.preload();
