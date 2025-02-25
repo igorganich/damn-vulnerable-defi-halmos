@@ -1190,7 +1190,7 @@ Suite result: ok. 2 passed; 0 failed; 0 skipped; finished in 1.63ms (438.35µs C
 Passed!
 ## Conclusions
 1. It is important to consider the specifics of contracts during symbolic analysis. For example, the UUPS proxy implements 2 interfaces at once, which forced us to slightly change the logic of symbolic traversal of the setup.
-2. When you need to compare 2 bytes arrays symbolically - you need to be VERY CAREFUL. There are cases when two arrays encoding the same transaction but have different hashes due to padding.
+2. When you need to compare 2 bytes arrays symbolically - you need to be VERY CAREFUL. It is possible for two arrays to encode the same transaction but have different hashes because they have different lengths.
 3. Simplifying validation can be very effective for finding bugs, or at least it can help find buggy patterns. Yes, we may encounter fake counterexamples, but if that's the price to find a real one, it may be worth paying.
 4. In this challenge, we again managed to "cut" the problem and "eat it in smaller pieces": first we found the privilege escalation, then the mechanism for changing the proxy implementation having these rights. However, the privilege escalation bug is atomic, indivisible in nature. Halmos also coped with it, but had to significantly expand the number of symbolic calls in the operation and wait many hours until something was found.
 5. The symbolic `fallback()` functionality for **SymbolicAttacker** turned out to be necessary to solve this challenge. This functionality should be useful for future challenges!
