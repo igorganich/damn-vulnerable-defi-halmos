@@ -993,7 +993,7 @@ Now, given that we have the rights to execute any call on behalf of `timelock` (
 ```solidity
 /*
 * The special version of execute() to use by SymbolicAttacker with escalated privileges.
-* Schedule checking is removed for simplicity since we can propose and execute the same operiation in 
+* Schedule checking is removed for simplicity since we can propose and execute the same operation in 
 * the same transaction
 */
 function execute(address[] calldata targets, uint256[] calldata values, bytes[] calldata dataElements, bytes32 salt)
