@@ -50,5 +50,19 @@ abstract contract ClimberTimelockBase is AccessControl {
         return keccak256(abi.encode(targets, values, dataElements, salt));
     }
 
+    /* 
+    * Special version of getOperationId to find privilege escalation bug 
+    */
+    /*
+    function getOperationId(
+        address[] memory targets,
+        uint256[] memory values,
+        bytes4[] memory dataElementsSelectors,
+        bytes32 salt
+    ) public pure returns (bytes32) {
+        return keccak256(abi.encode(targets, values, dataElementsSelectors, salt));
+    }*/
+    
+
     receive() external payable {}
 }

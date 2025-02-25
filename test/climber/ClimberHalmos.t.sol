@@ -8,20 +8,22 @@ import {ClimberTimelock, CallerNotTimelock, PROPOSER_ROLE, ADMIN_ROLE} from "../
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {DamnValuableToken} from "../../src/DamnValuableToken.sol";
 
-import "./Attacker.sol";
-import "./MaliciousImpl.sol";
+import "lib/GlobalStorage.sol";
+import "./SymbolicAttacker.sol";
 
-contract ClimberChallenge is Test {
-    address deployer = makeAddr("deployer");
-    address player = makeAddr("player");
-    address proposer = makeAddr("proposer");
-    address sweeper = makeAddr("sweeper");
-    address recovery = makeAddr("recovery");
+
+contract ClimberChallenge is Test, SymTest {
+    address deployer = address(0xcafe0000);
+    address player = address(0xcafe0001);
+    address recovery = address(0xcafe0002);
+    address proposer = address(0xcafe0003);
+    address sweeper = address(0xcafe0004);
 
     uint256 constant VAULT_TOKEN_BALANCE = 10_000_000e18;
     uint256 constant PLAYER_INITIAL_ETH_BALANCE = 0.1 ether;
     uint256 constant TIMELOCK_DELAY = 60 * 60;
 
+    GlobalStorage glob;
     ClimberVault vault;
     ClimberTimelock timelock;
     DamnValuableToken token;
@@ -38,6 +40,7 @@ contract ClimberChallenge is Test {
      */
     function setUp() public {
         startHoax(deployer);
+        glob = new GlobalStorage();
         vm.deal(player, PLAYER_INITIAL_ETH_BALANCE);
 
         // Deploy the vault behind a proxy,
@@ -57,6 +60,11 @@ contract ClimberChallenge is Test {
         // Deploy token and transfer initial token balance to the vault
         token = new DamnValuableToken();
         token.transfer(address(vault), VAULT_TOKEN_BALANCE);
+
+        glob.add_addr_name_pair(address(vault), "ERC1967Proxy");
+        glob.add_addr_name_pair(glob.get_ERC1967Proxy_implementation(address(vault)), "ClimberVault");
+        glob.add_addr_name_pair(address(timelock), "ClimberTimelock");
+        glob.add_addr_name_pair(address(token), "DamnValuableToken");
 
         vm.stopPrank();
     }
@@ -87,17 +95,47 @@ contract ClimberChallenge is Test {
     /**
      * CODE YOUR SOLUTION HERE
      */
-    function test_climber() public checkSolvedByPlayer {
-        Attacker attacker = new Attacker();
-        MaliciousImpl impl = new MaliciousImpl();
-        attacker.attack(timelock, ERC1967Proxy(payable(address(vault))), impl, token, recovery);
+    function check_climber() public checkSolvedByPlayer {
+        SymbolicAttacker attacker = new SymbolicAttacker();
+        glob.set_attacker_addr(address(attacker));
+        console.log("GlobalStorage\t", address(glob));
+        console.log("ClimberVaultProxy\t", address(vault));
+        console.log("ClimberVaultImpl\t", glob.get_ERC1967Proxy_implementation(address(vault)));
+        console.log("ClimberTimelock\t", address(timelock));
+        console.log("token\t\t", address(token));
+        console.log("SymbolicAttacker\t", address(attacker));
+        attacker.preload(timelock);
+        console.log(timelock.hasRole(PROPOSER_ROLE, address(attacker)));
+        attacker.attack();
     }
 
     /**
      * CHECKS SUCCESS CONDITIONS - DO NOT TOUCH
      */
     function _isSolved() private view {
-        assertEq(token.balanceOf(address(vault)), 0, "Vault still has tokens");
-        assertEq(token.balanceOf(recovery), VAULT_TOKEN_BALANCE, "Not enough tokens in recovery account");
+        assert(token.balanceOf(address(vault)) >= VAULT_TOKEN_BALANCE);
+        
+        // Check allowance changes
+        address symbolicSpender = svm.createAddress("symbolicSpender");
+        assert(token.allowance(address(vault), symbolicSpender) == 0);
+        
+        // Check vault roles immutability:
+        assert(vault.getSweeper() == sweeper);
+        assert(vault.owner() == address(timelock));
+        
+        // Check vault implementation immutability
+        assert(glob.get_ERC1967Proxy_implementation(address(vault)) == address(0xaaaa0003));
+        
+        // Check timelock roles immutability
+        /*
+        address symbolicProposer = svm.createAddress("symbolicProposer");
+        vm.assume(symbolicProposer != proposer);
+        assert(!timelock.hasRole(PROPOSER_ROLE, symbolicProposer));
+        */
+
+        address symbolicAdmin = svm.createAddress("symbolicAdmin");
+        vm.assume(symbolicAdmin != deployer);
+        vm.assume(symbolicAdmin != address(timelock));
+        assert(!timelock.hasRole(ADMIN_ROLE, symbolicAdmin));
     }
 }
